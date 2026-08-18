@@ -80,7 +80,7 @@ object SecurityUtils {
     }
 
     fun getDeviceName(): String {
-        val manufacturer = Build.MANUFACTURER?.capitalize(Locale.getDefault()) ?: ""
+        val manufacturer = Build.MANUFACTURER?.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.getDefault()) else it.toString() } ?: ""
         val model = Build.MODEL ?: "Android Device"
         return if (model.startsWith(manufacturer, ignoreCase = true)) {
             model

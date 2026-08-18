@@ -360,7 +360,7 @@ class SyncManager private constructor(private val context: Context) {
                             payloadJson = obj.optString("payloadJson", "{}"),
                             createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                             retryCount = obj.optInt("retryCount", 0),
-                            lastError = obj.optString("lastError", null)
+                            lastError = if (obj.has("lastError") && !obj.isNull("lastError")) obj.getString("lastError") else null
                         )
                     )
                 }

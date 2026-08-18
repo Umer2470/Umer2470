@@ -100,7 +100,7 @@ abstract class StoreDatabase : RoomDatabase() {
                     DB_NAME
                 )
                 .addMigrations(MIGRATION_18_19)
-                .fallbackToDestructiveMigration()
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance
                 instance

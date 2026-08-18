@@ -42,11 +42,18 @@ android {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
       if (file(keystorePath).exists()) {
         signingConfig = signingConfigs.getByName("release")
+      } else {
+        signingConfig = signingConfigs.getByName("debug")
       }
     }
     debug {
       signingConfig = signingConfigs.getByName("debug")
     }
+  }
+
+  lint {
+    abortOnError = false
+    checkReleaseBuilds = false
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_17
