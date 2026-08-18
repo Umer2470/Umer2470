@@ -1,0 +1,6 @@
+{
+  "name": "CH UMER POS.03080018035",
+  "description": "Professional commercial store management app featuring business onboarding, multi-branch support, inventory, POS sales, invoice generation, purchase entries, customer & supplier ledgers, and reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

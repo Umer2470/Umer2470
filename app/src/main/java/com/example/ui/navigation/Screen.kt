@@ -1,0 +1,25 @@
+package com.example.ui.navigation
+
+sealed class Screen(val route: String, val title: String) {
+    object Login : Screen("login", "PIN Security")
+    object Dashboard : Screen("dashboard", "Dashboard")
+    object StoreManagement : Screen("store_management", "Store Management Center")
+    object Inventory : Screen("inventory", "Inventory & Stock")
+    object SalesPos : Screen("sales_pos", "Sales / POS Billing")
+    object Purchase : Screen("purchase", "Purchase Stock")
+    object Customers : Screen("customers", "Customer Ledgers (Udhaar)")
+    object Suppliers : Screen("suppliers", "Supplier Payables")
+    object Reports : Screen("reports", "Reports & Profit Analysis")
+    object Settings : Screen("settings", "Store Settings")
+    object DailyClosing : Screen("daily_closing", "Employee Daily Closing")
+    object UserManagement : Screen("user_management", "User Roles & Staff Management")
+    object StoreAccessManagement : Screen("store_access_management", "Store Access & Security System")
+    object ActivityLogs : Screen("activity_logs", "System Activity Logs")
+    object MasterOwnerSaaSControl : Screen("master_saas_control", "Master SaaS Control Portal")
+    object BusinessSetupWizard : Screen("business_setup_wizard", "Business Setup Wizard")
+    object RecycleBin : Screen("recycle_bin", "Recycle Bin (Trash)")
+    object Attendance : Screen("attendance", "Employee Attendance & Shifts")
+    object CashBook : Screen("cash_book", "Cash Book & Daily Cash Flow")
+    object Expenses : Screen("expenses", "Expense Management")
+    object DeveloperMode : Screen("developer_mode", "Developer Mode & System Diagnostics")
+}
