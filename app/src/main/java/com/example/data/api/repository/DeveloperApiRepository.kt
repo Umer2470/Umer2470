@@ -1,139 +1,85 @@
 package com.example.data.api.repository
 
 import android.content.Context
-import com.example.data.api.license.LicenseStateCache
-import com.example.data.api.model.ApiResult
-import com.example.data.api.model.AppVersionCheckRequest
-import com.example.data.api.model.AppVersionCheckResponse
-import com.example.data.api.model.HealthCheckResponse
-import com.example.data.api.model.InstallationActivateRequest
-import com.example.data.api.model.InstallationActivateResponse
-import com.example.data.api.model.LicenseHeartbeatRequest
-import com.example.data.api.model.LicenseHeartbeatResponse
-import com.example.data.api.model.LicenseValidateRequest
-import com.example.data.api.model.LicenseValidateResponse
-import com.example.data.api.model.RegisterInstallationRequest
-import com.example.data.api.model.RegisterInstallationResponse
-import com.example.data.api.model.ServerConfigResponse
-import com.example.data.api.network.ApiClient
-import com.example.data.api.network.OfflineNetworkException
+import com.example.data.api.client.DeveloperApiClient
+import com.example.data.api.model.*
+import com.example.data.api.security.LicenseStateCache
 import com.example.data.api.security.SecureIdentityManager
-import com.example.data.api.security.SecureTokenManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.ResponseBody
+import org.json.JSONObject
 import retrofit2.Response
+import java.io.EOFException
+import java.io.IOException
+import java.net.ConnectException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import javax.net.ssl.SSLException
 
-/**
- * Repository layer managing Developer API communications, response parsing,
- * token caching, and license state preservation with guaranteed Offline-First safety.
- */
-class DeveloperApiRepository(context: Context) {
+class DeveloperApiRepository(private val context: Context) {
 
-    private val apiClient = ApiClient.getInstance(context)
+    private val apiClient = DeveloperApiClient.getInstance(context)
     private val identityManager = SecureIdentityManager.getInstance(context)
-    private val tokenManager = SecureTokenManager.getInstance(context)
     private val licenseStateCache = LicenseStateCache.getInstance(context)
 
     /**
-     * Checks developer server health (GET /health).
-     */
-    suspend fun checkHealth(): ApiResult<HealthCheckResponse> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiClient.apiService.checkHealth()
-            }
-        }
-    }
-
-    /**
-     * Retrieves server configuration (GET /config).
-     */
-    suspend fun getServerConfig(): ApiResult<ServerConfigResponse> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                apiClient.apiService.getServerConfig()
-            }
-        }
-    }
-
-    /**
-     * Registers app installation with the Developer Server (POST /installation/register).
-     */
-    suspend fun registerInstallation(): ApiResult<RegisterInstallationResponse> {
-        return withContext(Dispatchers.IO) {
-            safeApiCall {
-                val req = RegisterInstallationRequest(
-                    installationId = identityManager.getInstallationId(),
-                    customerId = identityManager.getCustomerId(),
-                    storeId = identityManager.getStoreId(),
-                    appVersion = identityManager.getAppVersion()
-                )
-                apiClient.apiService.registerInstallation(req)
-            }.also { result ->
-                if (result is ApiResult.Success) {
-                    val data = result.data
-                    if (data.accessToken != null) {
-                        tokenManager.saveTokens(
-                            accessToken = data.accessToken,
-                            refreshToken = data.refreshToken ?: "",
-                            expiresInSeconds = data.expiresIn ?: 3600L
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Activates app installation using Activation Code with the Developer Server (POST /installation/activate).
+     * Activates the app installation with an activation code (POST /installation/activate).
      */
     suspend fun activateInstallation(activationCode: String): ApiResult<InstallationActivateResponse> {
         return withContext(Dispatchers.IO) {
-            safeApiCall {
+            executeSafeApiCall(InstallationActivateResponse::class.java) {
                 val req = InstallationActivateRequest(
                     installationId = identityManager.getInstallationId(),
                     activationCode = activationCode.trim(),
                     customerId = identityManager.getCustomerId(),
                     storeId = identityManager.getStoreId(),
-                    appVersion = identityManager.getAppVersion()
+                    appVersion = identityManager.getAppVersion(),
+                    deviceFingerprint = identityManager.getDeviceFingerprint()
                 )
                 apiClient.apiService.activateInstallation(req)
             }.also { result ->
                 if (result is ApiResult.Success) {
                     val data = result.data
-                    if (data.status.equals("ACTIVE", ignoreCase = true) || data.status.equals("ACTIVATED", ignoreCase = true)) {
+                    if (data.isActivationSuccessful()) {
                         licenseStateCache.updateCachedLicenseState(
-                            status = LicenseStateCache.STATUS_ACTIVE,
-                            message = data.message,
-                            planType = data.planType ?: "COMMERCIAL",
-                            maxShops = data.maxShops ?: 10,
-                            maxUsers = data.maxUsers ?: 25
+                            status = data.getEffectiveStatus(),
+                            message = data.getEffectiveMessage(),
+                            planType = data.planType ?: data.plan ?: "COMMERCIAL",
+                            maxShops = data.maxShops ?: 5,
+                            maxUsers = data.maxUsers ?: 10
                         )
-                        if (!data.activationToken.isNullOrEmpty()) {
-                            tokenManager.saveTokens(
-                                accessToken = data.activationToken ?: "",
-                                refreshToken = "",
-                                expiresInSeconds = 31536000L
-                            )
-                        }
                     }
                 }
             }
         }
     }
 
-    private fun String?.isNull_or_empty(): Boolean = this == null || this.isEmpty()
+    /**
+     * Registers a new device installation on the Developer Server (POST /installation/register).
+     */
+    suspend fun registerInstallation(): ApiResult<RegisterInstallationResponse> {
+        return withContext(Dispatchers.IO) {
+            executeSafeApiCall(RegisterInstallationResponse::class.java) {
+                val req = RegisterInstallationRequest(
+                    installationId = identityManager.getInstallationId(),
+                    appVersion = identityManager.getAppVersion(),
+                    deviceFingerprint = identityManager.getDeviceFingerprint()
+                )
+                apiClient.apiService.registerInstallation(req)
+            }
+        }
+    }
 
     /**
-     * Validates commercial license key with the Developer Server (POST /license/validate).
+     * Validates a license key with the Developer Server (POST /license/validate).
      */
     suspend fun validateLicense(licenseKey: String): ApiResult<LicenseValidateResponse> {
         return withContext(Dispatchers.IO) {
-            safeApiCall {
+            executeSafeApiCall(LicenseValidateResponse::class.java) {
                 val req = LicenseValidateRequest(
                     installationId = identityManager.getInstallationId(),
-                    customerId = identityManager.getCustomerId(),
-                    licenseKey = licenseKey,
+                    licenseKey = licenseKey.trim(),
                     appVersion = identityManager.getAppVersion()
                 )
                 apiClient.apiService.validateLicense(req)
@@ -141,9 +87,9 @@ class DeveloperApiRepository(context: Context) {
                 if (result is ApiResult.Success) {
                     val data = result.data
                     licenseStateCache.updateCachedLicenseState(
-                        status = data.status,
-                        message = data.message,
-                        planType = data.planType ?: "COMMERCIAL",
+                        status = data.status ?: "active",
+                        message = data.message ?: "License validated successfully",
+                        planType = data.planType ?: data.plan ?: "COMMERCIAL",
                         maxShops = data.maxShops ?: 5,
                         maxUsers = data.maxUsers ?: 10
                     )
@@ -157,7 +103,7 @@ class DeveloperApiRepository(context: Context) {
      */
     suspend fun sendHeartbeat(): ApiResult<LicenseHeartbeatResponse> {
         return withContext(Dispatchers.IO) {
-            safeApiCall {
+            executeSafeApiCall(LicenseHeartbeatResponse::class.java) {
                 val req = LicenseHeartbeatRequest(
                     installationId = identityManager.getInstallationId(),
                     customerId = identityManager.getCustomerId(),
@@ -168,10 +114,32 @@ class DeveloperApiRepository(context: Context) {
                 if (result is ApiResult.Success) {
                     val data = result.data
                     licenseStateCache.updateCachedLicenseState(
-                        status = data.status,
-                        message = data.message
+                        status = data.status ?: "active",
+                        message = data.message ?: "Heartbeat acknowledged"
                     )
                 }
+            }
+        }
+    }
+
+    /**
+     * Checks developer server health (GET /health).
+     */
+    suspend fun checkHealth(): ApiResult<HealthCheckResponse> {
+        return withContext(Dispatchers.IO) {
+            executeSafeApiCall(HealthCheckResponse::class.java) {
+                apiClient.apiService.checkHealth()
+            }
+        }
+    }
+
+    /**
+     * Gets server configuration (GET /server/config).
+     */
+    suspend fun getServerConfig(): ApiResult<ServerConfigResponse> {
+        return withContext(Dispatchers.IO) {
+            executeSafeApiCall(ServerConfigResponse::class.java) {
+                apiClient.apiService.getServerConfig()
             }
         }
     }
@@ -181,7 +149,7 @@ class DeveloperApiRepository(context: Context) {
      */
     suspend fun checkAppVersion(): ApiResult<AppVersionCheckResponse> {
         return withContext(Dispatchers.IO) {
-            safeApiCall {
+            executeSafeApiCall(AppVersionCheckResponse::class.java) {
                 val req = AppVersionCheckRequest(
                     appVersion = identityManager.getAppVersion(),
                     installationId = identityManager.getInstallationId()
@@ -192,42 +160,167 @@ class DeveloperApiRepository(context: Context) {
     }
 
     /**
-     * Safely executes an API call catching network and HTTP errors without crashing.
+     * Safely executes an API call catching malformed JSON, HTML pages, network timeouts,
+     * DNS errors, and HTTP error codes without crashing the application.
      */
-    private suspend fun <T> safeApiCall(call: suspend () -> Response<T>): ApiResult<T> {
+    private suspend fun <T : Any> executeSafeApiCall(
+        clazz: Class<T>,
+        call: suspend () -> Response<ResponseBody>
+    ): ApiResult<T> {
         return try {
             val response = call()
-            if (response.isSuccessful) {
-                val body = response.body()
-                if (body != null) {
-                    ApiResult.Success(body)
+            val statusCode = response.code()
+            val rawBody = try {
+                if (response.isSuccessful) {
+                    response.body()?.string() ?: ""
                 } else {
-                    ApiResult.Error(code = response.code(), message = "Response body is empty")
+                    response.errorBody()?.string() ?: ""
                 }
+            } catch (e: Exception) {
+                ""
+            }
+
+            if (rawBody.isBlank()) {
+                return if (response.isSuccessful) {
+                    ApiResult.Error(code = statusCode, message = "Server returned an empty response.")
+                } else {
+                    val fallbackMsg = mapHttpCodeToFriendlyMessage(statusCode)
+                    ApiResult.Error(code = statusCode, message = fallbackMsg)
+                }
+            }
+
+            val trimmed = rawBody.trim()
+
+            // Detect HTML responses (Cloud Run fallback, Nginx error pages, Web UI index.html)
+            if (trimmed.startsWith("<") || trimmed.contains("<!DOCTYPE html", ignoreCase = true) || trimmed.contains("<html", ignoreCase = true)) {
+                val htmlError = when (statusCode) {
+                    404 -> "Activation endpoint not found on server (HTTP 404). Please verify API Base URL."
+                    in 500..599 -> "Developer server error (HTTP $statusCode). Server may be undergoing maintenance."
+                    else -> "Server returned an HTML web page instead of API JSON (HTTP $statusCode). Please check Developer Server URL."
+                }
+                return ApiResult.Error(code = statusCode, message = htmlError)
+            }
+
+            // Verify if payload looks like JSON
+            if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+                return ApiResult.Error(code = statusCode, message = "Server returned non-JSON response: '$trimmed' (HTTP $statusCode)")
+            }
+
+            // Attempt Moshi parsing safely
+            val parsedDto: T? = try {
+                val adapter = apiClient.moshi.adapter(clazz)
+                adapter.fromJson(trimmed)
+            } catch (e: Exception) {
+                null
+            }
+
+            if (response.isSuccessful && parsedDto != null) {
+                ApiResult.Success(parsedDto)
+            } else if (parsedDto != null) {
+                val extractedMessage = extractErrorMessageFromDto(parsedDto, trimmed) ?: mapHttpCodeToFriendlyMessage(statusCode)
+                ApiResult.Error(code = statusCode, message = extractedMessage)
             } else {
-                ApiResult.Error(
-                    code = response.code(),
-                    message = response.errorBody()?.string() ?: "Server returned HTTP ${response.code()}"
-                )
+                // Moshi parsing failed; attempt JSONObject extraction for error details
+                val extractedMessage = extractErrorMessageFromJsonString(trimmed)
+                if (response.isSuccessful) {
+                    ApiResult.Error(code = statusCode, message = extractedMessage ?: "Unable to parse server response into expected model.")
+                } else {
+                    ApiResult.Error(code = statusCode, message = extractedMessage ?: mapHttpCodeToFriendlyMessage(statusCode))
+                }
             }
         } catch (e: OfflineNetworkException) {
             ApiResult.Offline
+        } catch (e: SocketTimeoutException) {
+            ApiResult.Error(
+                code = -1,
+                message = "Connection timed out while contacting activation server. Please check your internet connection.",
+                isNetworkError = true
+            )
+        } catch (e: UnknownHostException) {
+            ApiResult.Error(
+                code = -1,
+                message = "Unable to resolve server address. Please check your internet connection.",
+                isNetworkError = true
+            )
+        } catch (e: ConnectException) {
+            ApiResult.Error(
+                code = -1,
+                message = "Failed to connect to developer server. Server may be down or unreachable.",
+                isNetworkError = true
+            )
+        } catch (e: SSLException) {
+            ApiResult.Error(
+                code = -1,
+                message = "Secure SSL handshake with developer server failed.",
+                isNetworkError = true
+            )
+        } catch (e: EOFException) {
+            ApiResult.Error(
+                code = -1,
+                message = "Server closed connection unexpectedly (EOF). Please try again.",
+                isNetworkError = true
+            )
+        } catch (e: IOException) {
+            ApiResult.Error(
+                code = -1,
+                message = e.localizedMessage ?: "Network I/O error occurred while contacting server.",
+                isNetworkError = true
+            )
         } catch (e: Exception) {
             ApiResult.Error(
                 code = -1,
-                message = e.message ?: "Network or connection error occurred",
+                message = e.localizedMessage ?: "Unexpected error occurred during server communication.",
                 isNetworkError = true
             )
         }
     }
 
-    /**
-     * Returns the Installation ID.
-     */
+    private fun mapHttpCodeToFriendlyMessage(code: Int): String {
+        return when (code) {
+            400 -> "Bad request (HTTP 400). Please verify activation code."
+            401 -> "Unauthorized (HTTP 401). Invalid activation credentials."
+            403 -> "Forbidden (HTTP 403). Access denied by developer server."
+            404 -> "Activation endpoint not found on server (HTTP 404)."
+            408 -> "Request timeout (HTTP 408). Server took too long to respond."
+            409 -> "Conflict (HTTP 409). Activation code is already in use."
+            422 -> "Unprocessable entity (HTTP 422). Invalid activation payload."
+            429 -> "Too many requests (HTTP 429). Please wait a moment and try again."
+            500 -> "Internal server error (HTTP 500). Please try again later."
+            502 -> "Bad gateway (HTTP 502). Developer server is temporarily unavailable."
+            503 -> "Service unavailable (HTTP 503). Server is undergoing maintenance."
+            504 -> "Gateway timeout (HTTP 504). Upstream server took too long to respond."
+            else -> "Server returned HTTP $code"
+        }
+    }
+
+    private fun extractErrorMessageFromJsonString(jsonString: String): String? {
+        return try {
+            val obj = JSONObject(jsonString)
+            val msg = obj.optString("message").ifBlank { null }
+                ?: obj.optString("error").ifBlank { null }
+                ?: obj.optString("error_message").ifBlank { null }
+                ?: obj.optString("details").ifBlank { null }
+                ?: obj.optString("status").ifBlank { null }
+            msg
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun extractErrorMessageFromDto(dto: Any, rawJson: String): String? {
+        return when (dto) {
+            is InstallationActivateResponse -> dto.getEffectiveMessage()
+            is RegisterInstallationResponse -> dto.message ?: dto.error
+            is LicenseValidateResponse -> dto.message ?: dto.error
+            is LicenseHeartbeatResponse -> dto.message ?: dto.error
+            is HealthCheckResponse -> dto.message ?: dto.error
+            is ServerConfigResponse -> dto.message ?: dto.error
+            is AppVersionCheckResponse -> dto.message
+            else -> extractErrorMessageFromJsonString(rawJson)
+        }
+    }
+
     fun getInstallationId(): String = identityManager.getInstallationId()
 
-    /**
-     * Returns current cached license status.
-     */
     fun getCachedLicenseStatus(): String = licenseStateCache.getCachedLicenseStatus()
 }

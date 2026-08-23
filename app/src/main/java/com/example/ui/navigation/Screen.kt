@@ -19,6 +19,7 @@ sealed class Screen(val route: String, val title: String) {
     object BusinessSetupWizard : Screen("business_setup_wizard", "Business Setup Wizard")
     object RecycleBin : Screen("recycle_bin", "Recycle Bin (Trash)")
     object Attendance : Screen("attendance", "Employee Attendance & Shifts")
+    object Invoice : Screen("invoices", "Invoice Center & Receipts")
     object CashBook : Screen("cash_book", "Cash Book & Daily Cash Flow")
     object Expenses : Screen("expenses", "Expense Management")
     object DeveloperMode : Screen("developer_mode", "Developer Mode & System Diagnostics")

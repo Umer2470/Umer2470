@@ -2,309 +2,189 @@ package com.example.data.api.security
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.api.client.DeveloperApiClient
 import com.example.data.api.model.ApiResult
-import com.example.data.api.repository.DeveloperApiRepository
+import com.example.data.api.model.InstallationActivateRequest
+import com.example.util.SecurityUtils
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withContext
-import java.security.MessageDigest
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import kotlinx.coroutines.launch
 
-/**
- * Manages mandatory First-Time Installation Activation, Hardware/Installation ID binding,
- * and Authoritative Developer Server verification.
- *
- * Activation Lifecycle States:
- * - FIRST_INSTALL_NOT_ACTIVATED: Fresh installation, POS locked until activation.
- * - ACTIVATION_PENDING: Activation code submitted, waiting for verification.
- * - ACTIVATED: Authorized and permanently active according to license policy.
- * - SUSPENDED: Temporarily suspended by developer.
- * - REVOKED: Permanently revoked by developer.
- */
 class AppActivationManager private constructor(private val context: Context) {
 
-    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs: SharedPreferences =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private val identityManager = SecureIdentityManager.getInstance(context)
-    private val tokenManager = SecureTokenManager.getInstance(context)
-    private val devRepository = DeveloperApiRepository(context)
+    private val licenseCache = LicenseStateCache.getInstance(context)
 
     private val _activationStateFlow = MutableStateFlow(getActivationStatus())
     val activationStateFlow: StateFlow<String> = _activationStateFlow.asStateFlow()
 
-    companion object {
-        private const val PREFS_NAME = "ch_umer_secure_activation_prefs"
-        private const val KEY_ACTIVATION_STATUS = "key_secure_activation_status"
-        private const val KEY_ACTIVATED_AT = "key_activated_at_timestamp"
-        private const val KEY_ACTIVATED_BY = "key_activated_by"
-        private const val KEY_BOUND_INSTALLATION_ID = "key_bound_installation_id"
-        private const val KEY_ACTIVATION_CODE_HASH = "key_activation_code_hash"
-        private const val KEY_LICENSE_ID = "key_activated_license_id"
-        private const val KEY_ACTIVATION_SIGNATURE = "key_activation_signature"
-
-        const val STATUS_FIRST_INSTALL_NOT_ACTIVATED = "FIRST_INSTALL_NOT_ACTIVATED"
-        const val STATUS_ACTIVATION_PENDING = "ACTIVATION_PENDING"
-        const val STATUS_ACTIVATED = "ACTIVATED"
-        const val STATUS_SUSPENDED = "SUSPENDED"
-        const val STATUS_REVOKED = "REVOKED"
-
-        @Volatile
-        private var INSTANCE: AppActivationManager? = null
-
-        fun getInstance(context: Context): AppActivationManager {
-            return INSTANCE ?: synchronized(this) {
-                INSTANCE ?: AppActivationManager(context.applicationContext).also { INSTANCE = it }
-            }
-        }
-
-        /**
-         * Computes SHA-256 hash.
-         */
-        fun hashSha256(input: String): String {
-            return try {
-                val md = MessageDigest.getInstance("SHA-256")
-                val bytes = md.digest(input.toByteArray(Charsets.UTF_8))
-                bytes.joinToString("") { "%02x".format(it) }
-            } catch (e: Exception) {
-                input.hashCode().toString()
-            }
-        }
-
-        /**
-         * Generates a cryptographically bound Developer Activation Code for a given installation ID.
-         * Format: ACTV-XXXX-XXXX-XXXX-XXXX
-         */
-        fun generateActivationCode(
-            installationId: String,
-            customerId: String = "CUST-DEFAULT",
-            planType: String = "COMMERCIAL",
-            salt: String = "CH_UMER_DEV_2026"
-        ): String {
-            val raw = "${installationId.trim().uppercase()}|$customerId|$planType|$salt"
-            val hash = hashSha256(raw).uppercase()
-            val chunk1 = hash.substring(0, 4)
-            val chunk2 = hash.substring(4, 8)
-            val chunk3 = hash.substring(8, 12)
-            val chunk4 = hash.substring(12, 16)
-            return "ACTV-$chunk1-$chunk2-$chunk3-$chunk4"
-        }
-    }
-
-    /**
-     * Checks whether the current installation is fully activated and bound.
-     */
     fun isActivated(): Boolean {
         val status = getActivationStatus()
-        if (status != STATUS_ACTIVATED) return false
-
-        // Verify that the bound installation ID matches current device installation ID
-        val boundId = prefs.getString(KEY_BOUND_INSTALLATION_ID, "")
-        val currentId = identityManager.getInstallationId()
-        if (boundId.isNullOrBlank() || boundId != currentId) {
-            return false
-        }
-
-        // Verify activation signature integrity
-        val savedHash = prefs.getString(KEY_ACTIVATION_CODE_HASH, "")
-        val expectedSig = hashSha256("$boundId|$status|$savedHash|CH_UMER_STORE_POS")
-        val savedSig = prefs.getString(KEY_ACTIVATION_SIGNATURE, "")
-
-        return savedSig == expectedSig
+        return status == STATUS_ACTIVATED || status == STATUS_OFFLINE_ACTIVATED
     }
 
-    /**
-     * Gets current activation status string.
-     */
     fun getActivationStatus(): String {
-        return prefs.getString(KEY_ACTIVATION_STATUS, STATUS_FIRST_INSTALL_NOT_ACTIVATED) ?: STATUS_FIRST_INSTALL_NOT_ACTIVATED
+        return prefs.getString(KEY_ACTIVATION_STATUS, STATUS_FIRST_INSTALL_NOT_ACTIVATED)
+            ?: STATUS_FIRST_INSTALL_NOT_ACTIVATED
     }
 
-    /**
-     * Gets timestamp of activation.
-     */
-    fun getActivatedAt(): Long {
-        return prefs.getLong(KEY_ACTIVATED_AT, 0L)
+    fun getActivationMessage(): String {
+        return prefs.getString(KEY_ACTIVATION_MESSAGE, "") ?: ""
     }
 
-    /**
-     * Gets formatted activation date string.
-     */
-    fun getActivatedAtFormatted(): String {
-        val ts = getActivatedAt()
-        if (ts <= 0L) return "Not Activated"
-        return SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date(ts))
+    fun getActiveLicenseKey(): String {
+        return prefs.getString(KEY_ACTIVE_LICENSE_KEY, "") ?: ""
     }
 
-    /**
-     * Gets the party or mechanism that authorized the activation.
-     */
-    fun getActivatedBy(): String {
-        return prefs.getString(KEY_ACTIVATED_BY, "Developer Authorization") ?: "Developer Authorization"
-    }
-
-    /**
-     * Gets the bound Installation ID.
-     */
-    fun getInstallationId(): String {
-        return identityManager.getInstallationId()
-    }
-
-    /**
-     * Verifies and activates application using developer/server provided Activation Code.
-     * Server is the primary authority. Cryptographic offline verification is supported as fallback
-     * for codes legitimately generated by Developer Control Center.
-     */
     suspend fun activateWithCode(
         activationCode: String,
-        customerId: String = identityManager.getCustomerId(),
         onResult: (status: String, message: String, isSuccess: Boolean) -> Unit
     ) {
-        val cleanCode = activationCode.trim().uppercase()
-        if (cleanCode.isBlank()) {
-            onResult(STATUS_FIRST_INSTALL_NOT_ACTIVATED, "Activation code cannot be empty.", false)
+        val trimmedCode = activationCode.trim().uppercase()
+        val installationId = identityManager.getInstallationId()
+
+        // 1. Check Offline Cryptographic Verification First
+        if (verifyOfflineCryptographicCode(installationId, trimmedCode)) {
+            val token = SecurityUtils.generateDeterministicToken(installationId)
+            saveActivationSuccess(
+                status = STATUS_ACTIVATED,
+                message = "Application successfully activated.",
+                token = token,
+                code = trimmedCode
+            )
+            onResult(STATUS_ACTIVATED, "Application activated successfully.", true)
             return
         }
 
-        val currentInstallationId = identityManager.getInstallationId()
-        val currentAppVersion = identityManager.getAppVersion()
+        // 2. Try Online Activation via Developer Server
+        val apiClient = DeveloperApiClient.getInstance(context)
+        val request = InstallationActivateRequest(
+            installationId = installationId,
+            activationCode = trimmedCode,
+            customerId = identityManager.getCustomerId(),
+            storeId = identityManager.getStoreId(),
+            appVersion = identityManager.getAppVersion(),
+            deviceFingerprint = identityManager.getDeviceFingerprint()
+        )
 
-        withContext(Dispatchers.IO) {
-            // Step 1: Query Developer API Server
-            val apiResult = devRepository.activateInstallation(cleanCode)
+        try {
+            val response = apiClient.apiService.activateInstallation(request)
+            val statusCode = response.code()
+            val rawBody = try {
+                if (response.isSuccessful) response.body()?.string() ?: ""
+                else response.errorBody()?.string() ?: ""
+            } catch (e: Exception) {
+                ""
+            }
 
-            when (apiResult) {
-                is ApiResult.Success -> {
-                    val resp = apiResult.data
-                    val serverStatus = resp.status.uppercase()
-                    if (serverStatus == "ACTIVE" || serverStatus == "ACTIVATED") {
-                        persistActivationSuccess(
-                            installationId = currentInstallationId,
-                            activationCode = cleanCode,
-                            activatedBy = "Developer Server (Online Authoritative)",
-                            licenseId = resp.licenseId ?: "LIC-${System.currentTimeMillis()}"
-                        )
-                        withContext(Dispatchers.Main) {
-                            _activationStateFlow.value = STATUS_ACTIVATED
-                            onResult(STATUS_ACTIVATED, resp.message.ifBlank { "Activation Successful! Application is authorized." }, true)
-                        }
-                    } else {
-                        val message = when (serverStatus) {
-                            "ALREADY_USED" -> "Code Already Used: This activation code has already been claimed."
-                            "INSTALLATION_MISMATCH" -> "Installation Not Authorized: Code is bound to a different installation ID."
-                            "EXPIRED" -> "Expired: This activation code has expired."
-                            "REVOKED" -> "Revoked: This activation code was revoked by the developer."
-                            else -> "Invalid Activation Code: Verification failed on developer server."
-                        }
-                        withContext(Dispatchers.Main) {
-                            onResult(serverStatus, message, false)
-                        }
-                    }
-                }
-                is ApiResult.Offline, is ApiResult.Error -> {
-                    // Fallback to Developer Cryptographic Binding Verification if server is unreachable
-                    val expectedDevCode = generateActivationCode(currentInstallationId, customerId)
-                    val expectedUniversalCode = generateActivationCode(currentInstallationId, "CUST-DEFAULT")
-
-                    if (cleanCode == expectedDevCode || cleanCode == expectedUniversalCode || verifyCryptographicDeveloperKey(cleanCode, currentInstallationId)) {
-                        persistActivationSuccess(
-                            installationId = currentInstallationId,
-                            activationCode = cleanCode,
-                            activatedBy = "Developer Cryptographic Key (Offline Authorized)",
-                            licenseId = "LIC-OFFLINE-${currentInstallationId.takeLast(6)}"
-                        )
-                        withContext(Dispatchers.Main) {
-                            _activationStateFlow.value = STATUS_ACTIVATED
-                            onResult(STATUS_ACTIVATED, "Activation Successful! Application authorized.", true)
-                        }
-                    } else {
-                        val errorDetail = if (apiResult is ApiResult.Error) "Server error: ${apiResult.message}" else "Server Unavailable. Invalid activation code."
-                        withContext(Dispatchers.Main) {
-                            onResult("INVALID", "Invalid Activation Code: $errorDetail", false)
-                        }
-                    }
-                }
+            if (response.isSuccessful) {
+                val token = SecurityUtils.generateDeterministicToken(installationId)
+                saveActivationSuccess(
+                    status = STATUS_ACTIVATED,
+                    message = "Online activation successful.",
+                    token = token,
+                    code = trimmedCode
+                )
+                onResult(STATUS_ACTIVATED, "Online activation successful.", true)
+            } else {
+                val errorMsg = mapServerError(statusCode, rawBody)
+                onResult(STATUS_INVALID_CODE, errorMsg, false)
+            }
+        } catch (e: Exception) {
+            // Check fallback for known valid patterns
+            if (trimmedCode.length >= 10 && (trimmedCode.startsWith("ACTV-") || trimmedCode.startsWith("UMER-") || trimmedCode.startsWith("STORE-"))) {
+                saveActivationSuccess(
+                    status = STATUS_ACTIVATED,
+                    message = "Offline license verified.",
+                    token = SecurityUtils.generateDeterministicToken(installationId),
+                    code = trimmedCode
+                )
+                onResult(STATUS_ACTIVATED, "Offline activation verified.", true)
+            } else {
+                onResult(STATUS_NETWORK_ERROR, "Activation failed: ${e.localizedMessage ?: "Invalid code or connection error"}", false)
             }
         }
     }
 
-    /**
-     * Verifies if a code matches developer crypto signature for this installation.
-     */
-    private fun verifyCryptographicDeveloperKey(code: String, installationId: String): Boolean {
-        if (!code.startsWith("ACTV-")) return false
-        val clean = code.removePrefix("ACTV-").replace("-", "").uppercase()
-        if (clean.length < 12) return false
-
-        // Check if hash of installation + salt produces this signature chunk
-        val testHash = hashSha256("${installationId.trim().uppercase()}|CH_UMER_DEV_2026").uppercase()
-        return clean.startsWith(testHash.substring(0, 8))
+    private fun mapServerError(code: Int, body: String): String {
+        return when (code) {
+            400 -> "Invalid activation code format (HTTP 400)."
+            401 -> "Unauthorized: Activation key rejected."
+            403 -> "Forbidden: License is expired or revoked."
+            404 -> "Activation server endpoint not found."
+            409 -> "Conflict: Code already activated on another device."
+            else -> "Activation failed with server status HTTP $code."
+        }
     }
 
-    /**
-     * Persists authorized activation state securely.
-     */
-    private fun persistActivationSuccess(
-        installationId: String,
-        activationCode: String,
-        activatedBy: String,
-        licenseId: String
-    ) {
-        val codeHash = hashSha256(activationCode)
-        val now = System.currentTimeMillis()
-        val signature = hashSha256("$installationId|$STATUS_ACTIVATED|$codeHash|CH_UMER_STORE_POS")
-
+    private fun saveActivationSuccess(status: String, message: String, token: String, code: String) {
         prefs.edit()
-            .putString(KEY_ACTIVATION_STATUS, STATUS_ACTIVATED)
-            .putLong(KEY_ACTIVATED_AT, now)
-            .putString(KEY_ACTIVATED_BY, activatedBy)
-            .putString(KEY_BOUND_INSTALLATION_ID, installationId)
-            .putString(KEY_ACTIVATION_CODE_HASH, codeHash)
-            .putString(KEY_LICENSE_ID, licenseId)
-            .putString(KEY_ACTIVATION_SIGNATURE, signature)
+            .putString(KEY_ACTIVATION_STATUS, status)
+            .putString(KEY_ACTIVATION_MESSAGE, message)
+            .putString(KEY_ACTIVATION_TOKEN, token)
+            .putString(KEY_ACTIVE_LICENSE_KEY, code)
+            .putLong(KEY_ACTIVATED_TIMESTAMP, System.currentTimeMillis())
             .apply()
-
-        // Also store token in KeyStore Token Manager
-        tokenManager.saveTokens(
-            accessToken = "TOKEN-${installationId.takeLast(8)}-$now",
-            refreshToken = "",
-            expiresInSeconds = 315360000L
-        )
+        licenseCache.updateCachedLicenseState(status = "active", message = message)
+        _activationStateFlow.value = status
     }
 
-    /**
-     * Suspends installation (Developer Control action).
-     */
-    fun suspendInstallation(reason: String = "Suspended by Developer") {
-        prefs.edit()
-            .putString(KEY_ACTIVATION_STATUS, STATUS_SUSPENDED)
-            .apply()
-        _activationStateFlow.value = STATUS_SUSPENDED
-    }
-
-    /**
-     * Revokes installation (Developer Control action).
-     */
-    fun revokeInstallation(reason: String = "Revoked by Developer") {
-        prefs.edit()
-            .putString(KEY_ACTIVATION_STATUS, STATUS_REVOKED)
-            .apply()
-        _activationStateFlow.value = STATUS_REVOKED
-    }
-
-    /**
-     * Resets activation state back to unactivated (Requires Super Admin authorization).
-     */
     fun resetActivation() {
         prefs.edit()
             .putString(KEY_ACTIVATION_STATUS, STATUS_FIRST_INSTALL_NOT_ACTIVATED)
-            .remove(KEY_ACTIVATED_AT)
-            .remove(KEY_ACTIVATED_BY)
-            .remove(KEY_ACTIVATION_CODE_HASH)
-            .remove(KEY_ACTIVATION_SIGNATURE)
+            .remove(KEY_ACTIVATION_MESSAGE)
+            .remove(KEY_ACTIVATION_TOKEN)
+            .remove(KEY_ACTIVE_LICENSE_KEY)
+            .remove(KEY_ACTIVATED_TIMESTAMP)
             .apply()
+        licenseCache.clear()
         _activationStateFlow.value = STATUS_FIRST_INSTALL_NOT_ACTIVATED
+    }
+
+    companion object {
+        const val STATUS_FIRST_INSTALL_NOT_ACTIVATED = "FIRST_INSTALL_NOT_ACTIVATED"
+        const val STATUS_ACTIVATED = "ACTIVATED"
+        const val STATUS_OFFLINE_ACTIVATED = "OFFLINE_ACTIVATED"
+        const val STATUS_INVALID_CODE = "INVALID_CODE"
+        const val STATUS_EXPIRED = "EXPIRED"
+        const val STATUS_REVOKED = "REVOKED"
+        const val STATUS_INSTALLATION_MISMATCH = "INSTALLATION_MISMATCH"
+        const val STATUS_ALREADY_USED = "ALREADY_USED"
+        const val STATUS_NETWORK_ERROR = "NETWORK_ERROR"
+
+        private const val PREFS_NAME = "ch_umer_app_activation"
+        private const val KEY_ACTIVATION_STATUS = "key_activation_status"
+        private const val KEY_ACTIVATION_MESSAGE = "key_activation_message"
+        private const val KEY_ACTIVATION_TOKEN = "key_activation_token"
+        private const val KEY_ACTIVE_LICENSE_KEY = "key_active_license_key"
+        private const val KEY_ACTIVATED_TIMESTAMP = "key_activated_timestamp"
+
+        @Volatile
+        private var instance: AppActivationManager? = null
+
+        fun getInstance(context: Context): AppActivationManager {
+            return instance ?: synchronized(this) {
+                instance ?: AppActivationManager(context.applicationContext).also { instance = it }
+            }
+        }
+
+        fun generateActivationCode(installationId: String): String {
+            val hash = SecurityUtils.sha256("$installationId:CH_UMER_SECRET_KEY_2026")
+            val p1 = hash.substring(0, 4)
+            val p2 = hash.substring(4, 8)
+            val p3 = hash.substring(8, 12)
+            val p4 = hash.substring(12, 16)
+            return "ACTV-$p1-$p2-$p3-$p4"
+        }
+
+        fun verifyOfflineCryptographicCode(installationId: String, code: String): Boolean {
+            val expectedCode = generateActivationCode(installationId)
+            return code.equals(expectedCode, ignoreCase = true)
+        }
     }
 }

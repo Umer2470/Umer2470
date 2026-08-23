@@ -50,5 +50,3 @@
 -keepclassmembers class * {
     @retrofit2.http.** *;
 }
-
-
