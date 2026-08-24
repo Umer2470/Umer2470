@@ -18,8 +18,7 @@ import com.example.ui.viewmodel.StoreViewModelFactory
 class MainActivity : ComponentActivity() {
 
     private val viewModel: StoreViewModel by viewModels {
-        val database = AppDatabase.getInstance(applicationContext)
-        StoreViewModelFactory(applicationContext, database)
+        StoreViewModelFactory(application)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

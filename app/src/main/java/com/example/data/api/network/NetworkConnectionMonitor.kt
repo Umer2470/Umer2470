@@ -57,9 +57,25 @@ class NetworkConnectionMonitor(private val context: Context) {
         }
     }.distinctUntilChanged()
 
+    fun isOnline(): Boolean {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+        return isNetworkAvailable(cm)
+    }
+
     private fun isNetworkAvailable(cm: ConnectivityManager): Boolean {
         val activeNetwork = cm.activeNetwork ?: return false
         val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
         return caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    companion object {
+        @Volatile
+        private var instance: NetworkConnectionMonitor? = null
+
+        fun getInstance(context: Context): NetworkConnectionMonitor {
+            return instance ?: synchronized(this) {
+                instance ?: NetworkConnectionMonitor(context.applicationContext).also { instance = it }
+            }
+        }
     }
 }

@@ -28,3 +28,17 @@ val Blue100 = Color(0xFFDBEAFE)
 
 val Purple600 = Color(0xFF9333EA)
 val Purple100 = Color(0xFFF3E8FF)
+
+// Bento & Dashboard Analytics Palette
+val BentoPrimary = Color(0xFF2563EB)
+val BentoPrimaryDark = Color(0xFF1D4ED8)
+val BentoPrimaryLight = Color(0xFFDBEAFE)
+val BentoEmerald = Color(0xFF059669)
+val BentoEmeraldLight = Color(0xFFD1FAE5)
+val BentoIndigo = Color(0xFF4F46E5)
+val BentoIndigoLight = Color(0xFFE0E7FF)
+val BentoAmber = Color(0xFFD97706)
+val BentoPurple = Color(0xFF9333EA)
+val BentoRose = Color(0xFFE11D48)
+val BentoCardDark = Color(0xFF1E293B)
+

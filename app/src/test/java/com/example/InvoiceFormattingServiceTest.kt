@@ -16,7 +16,7 @@ class InvoiceFormattingServiceTest {
             invoiceNumber = "INV-2026-001",
             customerName = "Walk-in Customer",
             cashierName = "Admin",
-            subtotal = 500.0,
+            totalAmount = 500.0,
             discount = 50.0,
             taxAmount = 0.0,
             netAmount = 450.0,
@@ -32,7 +32,7 @@ class InvoiceFormattingServiceTest {
                 saleId = 1L,
                 productId = 1L,
                 productName = "Rice 5kg",
-                unitPrice = 250.0,
+                salePrice = 250.0,
                 quantity = 2.0,
                 totalPrice = 500.0,
                 unit = "Bag"
@@ -61,12 +61,12 @@ class InvoiceFormattingServiceTest {
             id = 2L,
             invoiceNumber = "INV-100",
             customerName = "Cash Buyer",
-            subtotal = 100.0,
+            totalAmount = 100.0,
             netAmount = 100.0,
             paidAmount = 100.0
         )
         val items = listOf(
-            SaleItem(id = 1L, saleId = 2L, productId = 1L, productName = "Item A", unitPrice = 100.0, quantity = 1.0, totalPrice = 100.0)
+            SaleItem(id = 1L, saleId = 2L, productId = 1L, productName = "Item A", salePrice = 100.0, quantity = 1.0, totalPrice = 100.0)
         )
         val settings = StoreSettings(storeName = "POS STORE", phone = "03080018035")
         val invoice = InvoiceFormattingService.formatSaleTransaction(sale, items, settings)

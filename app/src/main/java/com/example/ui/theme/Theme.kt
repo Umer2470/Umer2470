@@ -12,30 +12,39 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+private val ThemeGold500 = Color(0xFFF59E0B)
+private val ThemeGold400 = Color(0xFFFBBF24)
+private val ThemeGold600 = Color(0xFFD97706)
+private val ThemeEmerald500 = Color(0xFF10B981)
+private val ThemeEmerald600 = Color(0xFF059669)
+private val ThemeNavy900 = Color(0xFF0F172A)
+private val ThemeNavy800 = Color(0xFF1E293B)
+private val ThemeSlate50 = Color(0xFFF8FAFC)
+
 private val DarkColorScheme = darkColorScheme(
-    primary = Gold500,
-    secondary = Gold400,
-    tertiary = Emerald500,
-    background = Navy900,
-    surface = Navy800,
-    onPrimary = Navy900,
-    onSecondary = Navy900,
+    primary = ThemeGold500,
+    secondary = ThemeGold400,
+    tertiary = ThemeEmerald500,
+    background = ThemeNavy900,
+    surface = ThemeNavy800,
+    onPrimary = ThemeNavy900,
+    onSecondary = ThemeNavy900,
     onTertiary = Color.White,
     onBackground = Color.White,
     onSurface = Color.White,
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Navy900,
-    secondary = Gold600,
-    tertiary = Emerald600,
-    background = Slate50,
+    primary = ThemeNavy900,
+    secondary = ThemeGold600,
+    tertiary = ThemeEmerald600,
+    background = ThemeSlate50,
     surface = Color.White,
     onPrimary = Color.White,
     onSecondary = Color.White,
     onTertiary = Color.White,
-    onBackground = Navy900,
-    onSurface = Navy900,
+    onBackground = ThemeNavy900,
+    onSurface = ThemeNavy900,
 )
 
 @Composable
@@ -57,7 +66,15 @@ fun MyApplicationTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = Typography,
+        typography = AppTypography,
         content = content
     )
+}
+
+@Composable
+fun StoreManagerTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit
+) {
+    MyApplicationTheme(darkTheme = darkTheme, content = content)
 }

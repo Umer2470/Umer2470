@@ -26,8 +26,8 @@ class AuthInterceptor(
 
         // Attach Identity & System metadata headers
         builder.header("X-App-Installation-ID", identityManager.getInstallationId())
-        builder.header("X-Customer-ID", identityManager.getCustomerId())
-        builder.header("X-Store-ID", identityManager.getStoreId().toString())
+        builder.header("X-Customer-ID", identityManager.getCustomerId() ?: "")
+        builder.header("X-Store-ID", identityManager.getStoreId() ?: "")
         builder.header("X-App-Version", identityManager.getAppVersion())
         builder.header("Accept", "application/json")
         builder.header("Content-Type", "application/json")

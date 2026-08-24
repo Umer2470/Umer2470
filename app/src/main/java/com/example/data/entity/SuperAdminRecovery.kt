@@ -1,11 +1,7 @@
 package com.example.data.entity
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
-
-@Entity(tableName = "super_admin_recovery")
 data class SuperAdminRecovery(
-    @PrimaryKey val id: Int = 1,
+    val id: Int = 1,
     val tenantId: String = "TENANT_DEFAULT",
     val passphraseWordsCsv: String = "",
     val emergencyCode: String = "",

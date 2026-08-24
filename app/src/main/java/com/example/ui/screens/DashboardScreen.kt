@@ -20,6 +20,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.api.network.ConnectionState
 import com.example.data.api.security.AppActivationManager
+import com.example.ui.components.AnalyticsChartsWidget
 import com.example.ui.components.KpiCard
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusBadge
@@ -45,6 +46,8 @@ fun DashboardScreen(
     val storeSettings by viewModel.storeSettings.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val activationState by viewModel.activationState.collectAsState()
+    val salesTrend by viewModel.salesTrend.collectAsState()
+    val topCategories by viewModel.topCategories.collectAsState()
 
     val currency = storeSettings?.currencySymbol ?: "Rs"
     val totalRevenue = remember(sales) { sales.sumOf { it.netAmount } }
@@ -209,6 +212,15 @@ fun DashboardScreen(
                     modifier = Modifier.weight(1f)
                 )
             }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Daily Sales Trend & Category Analytics Chart
+            AnalyticsChartsWidget(
+                salesTrend = salesTrend,
+                topCategories = topCategories,
+                currencySymbol = currency
+            )
 
             Spacer(modifier = Modifier.height(20.dp))
 

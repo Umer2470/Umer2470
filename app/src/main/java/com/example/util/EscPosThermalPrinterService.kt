@@ -32,12 +32,9 @@ class EscPosThermalPrinterService(private val context: Context) {
 
             val columns = if (paperWidthMm <= 58) 32 else 48
             val rawText = InvoiceFormattingService.generateThermalText(invoice, columns)
+            val bytes = generateEscPosCommandBytes(invoice, paperWidthMm)
 
-            // ESC @ (Initialize printer)
-            outputStream.write(byteArrayOf(0x1B, 0x40))
-            outputStream.write(rawText.toByteArray(Charsets.UTF_8))
-            // Line feeds and paper cut
-            outputStream.write(byteArrayOf(0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x42, 0x00))
+            outputStream.write(bytes)
             outputStream.flush()
             true
         } catch (e: Exception) {
@@ -49,6 +46,30 @@ class EscPosThermalPrinterService(private val context: Context) {
             } catch (e: Exception) {
                 // Ignore
             }
+        }
+    }
+
+    companion object {
+        fun generateEscPosCommandBytes(
+            invoice: PrintableInvoice,
+            paperWidthMm: Int = 80
+        ): ByteArray {
+            val columns = if (paperWidthMm <= 58) 32 else 48
+            val rawText = InvoiceFormattingService.generateThermalText(invoice, columns)
+            val textBytes = rawText.toByteArray(Charsets.UTF_8)
+            val initCommand = byteArrayOf(0x1B, 0x40)
+            val cutCommand = byteArrayOf(0x0A, 0x0A, 0x0A, 0x1D, 0x56, 0x42, 0x00)
+            return initCommand + textBytes + cutCommand
+        }
+
+        fun generateEscPosCommandBytes(
+            sale: com.example.data.entity.Sale,
+            items: List<com.example.data.entity.SaleItem>,
+            settings: com.example.data.entity.StoreSettings,
+            paperWidthMm: Int = 80
+        ): ByteArray {
+            val invoice = InvoiceFormattingService.formatSaleTransaction(sale, items, settings)
+            return generateEscPosCommandBytes(invoice, paperWidthMm)
         }
     }
 }

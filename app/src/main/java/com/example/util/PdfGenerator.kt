@@ -6,10 +6,30 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import android.os.Environment
+import com.example.data.entity.Sale
+import com.example.data.entity.SaleItem
+import com.example.data.entity.StoreSettings
 import java.io.File
 import java.io.FileOutputStream
 
 object PdfGenerator {
+
+    enum class ReceiptFormat {
+        THERMAL_58MM,
+        THERMAL_80MM,
+        A4
+    }
+
+    fun generatePrintablePdfInvoice(
+        context: Context,
+        sale: Sale,
+        items: List<SaleItem>,
+        settings: StoreSettings,
+        format: ReceiptFormat = ReceiptFormat.A4
+    ): File? {
+        val printableInvoice = InvoiceFormattingService.formatSaleTransaction(sale, items, settings)
+        return generateInvoicePdf(context, printableInvoice)
+    }
 
     fun generateInvoicePdf(
         context: Context,

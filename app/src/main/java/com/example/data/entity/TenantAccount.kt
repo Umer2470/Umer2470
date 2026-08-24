@@ -1,18 +1,7 @@
 package com.example.data.entity
 
-import androidx.room.Entity
-import androidx.room.Index
-import androidx.room.PrimaryKey
-
-@Entity(
-    tableName = "tenant_accounts",
-    indices = [
-        Index("tenantCode", unique = true),
-        Index("licenseKey", unique = true)
-    ]
-)
 data class TenantAccount(
-    @PrimaryKey val id: String, // e.g. "TENANT_DEFAULT", "TENANT_1001", "TENANT_1002"
+    val id: String, // e.g. "TENANT_DEFAULT", "TENANT_1001", "TENANT_1002"
     val tenantCode: String, // e.g. "AL-KHAIR-POS", "BAHRIA-BLDG", "LAHORI-STORE"
     val businessName: String, // Customer Business / Shop Title
     val ownerName: String,
@@ -48,9 +37,8 @@ data class TenantAccount(
     }
 }
 
-@Entity(tableName = "saas_subscription_plans")
 data class SubscriptionPlan(
-    @PrimaryKey val id: String, // "TRIAL", "MONTHLY", "ANNUAL", "ENTERPRISE", "LIFETIME"
+    val id: String, // "TRIAL", "MONTHLY", "ANNUAL", "ENTERPRISE", "LIFETIME"
     val name: String,
     val priceRs: Double,
     val durationDays: Int,

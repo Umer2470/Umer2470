@@ -62,51 +62,25 @@ class AppActivationManager private constructor(private val context: Context) {
         }
 
         // 2. Try Online Activation via Developer Server
-        val apiClient = DeveloperApiClient.getInstance(context)
-        val request = InstallationActivateRequest(
-            installationId = installationId,
-            activationCode = trimmedCode,
-            customerId = identityManager.getCustomerId(),
-            storeId = identityManager.getStoreId(),
-            appVersion = identityManager.getAppVersion(),
-            deviceFingerprint = identityManager.getDeviceFingerprint()
-        )
-
-        try {
-            val response = apiClient.apiService.activateInstallation(request)
-            val statusCode = response.code()
-            val rawBody = try {
-                if (response.isSuccessful) response.body()?.string() ?: ""
-                else response.errorBody()?.string() ?: ""
-            } catch (e: Exception) {
-                ""
-            }
-
-            if (response.isSuccessful) {
+        val repo = com.example.data.api.repository.DeveloperApiRepository(context)
+        when (val result = repo.activateInstallation(trimmedCode)) {
+            is ApiResult.Success -> {
                 val token = SecurityUtils.generateDeterministicToken(installationId)
                 saveActivationSuccess(
                     status = STATUS_ACTIVATED,
-                    message = "Online activation successful.",
+                    message = result.data.getEffectiveMessage(),
                     token = token,
                     code = trimmedCode
                 )
-                onResult(STATUS_ACTIVATED, "Online activation successful.", true)
-            } else {
-                val errorMsg = mapServerError(statusCode, rawBody)
-                onResult(STATUS_INVALID_CODE, errorMsg, false)
+                onResult(STATUS_ACTIVATED, result.data.getEffectiveMessage(), true)
             }
-        } catch (e: Exception) {
-            // Check fallback for known valid patterns
-            if (trimmedCode.length >= 10 && (trimmedCode.startsWith("ACTV-") || trimmedCode.startsWith("UMER-") || trimmedCode.startsWith("STORE-"))) {
-                saveActivationSuccess(
-                    status = STATUS_ACTIVATED,
-                    message = "Offline license verified.",
-                    token = SecurityUtils.generateDeterministicToken(installationId),
-                    code = trimmedCode
-                )
-                onResult(STATUS_ACTIVATED, "Offline activation verified.", true)
-            } else {
-                onResult(STATUS_NETWORK_ERROR, "Activation failed: ${e.localizedMessage ?: "Invalid code or connection error"}", false)
+            is ApiResult.Error -> {
+                val errorMsg = result.message
+                val status = if (result.isNetworkError) STATUS_NETWORK_ERROR else STATUS_INVALID_CODE
+                onResult(status, errorMsg, false)
+            }
+            is ApiResult.Offline -> {
+                onResult(STATUS_NETWORK_ERROR, "No internet connection. Please verify internet or use valid offline activation code.", false)
             }
         }
     }
@@ -185,6 +159,10 @@ class AppActivationManager private constructor(private val context: Context) {
         fun verifyOfflineCryptographicCode(installationId: String, code: String): Boolean {
             val expectedCode = generateActivationCode(installationId)
             return code.equals(expectedCode, ignoreCase = true)
+        }
+
+        fun verifyActivationCodeLocally(installationId: String, code: String): Boolean {
+            return verifyOfflineCryptographicCode(installationId, code)
         }
     }
 }

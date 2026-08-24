@@ -4,7 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.example.data.api.config.ApiConfig
 import com.example.data.api.model.ApiResult
-import com.example.data.api.network.NetworkConnectivityMonitor
+import com.example.data.api.network.NetworkConnectionMonitor
 import com.example.data.api.repository.DeveloperApiRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -112,15 +112,6 @@ class SyncManager private constructor(private val context: Context) {
     init {
         loadQueueFromStorage()
         seedInitialLogs()
-
-        // Hook automatic trigger on network restored
-        NetworkConnectivityMonitor.getInstance(context).setOnNetworkRestoredCallback {
-            if (syncQueue.isNotEmpty()) {
-                scope.launch {
-                    performAutoSync()
-                }
-            }
-        }
     }
 
     private fun seedInitialLogs() {
@@ -171,7 +162,7 @@ class SyncManager private constructor(private val context: Context) {
         }
 
         // Try syncing if network is currently connected
-        if (NetworkConnectivityMonitor.getInstance(context).checkRawInternetAvailable()) {
+        if (NetworkConnectionMonitor.getInstance(context).isOnline()) {
             scope.launch {
                 performAutoSync()
             }
@@ -184,8 +175,8 @@ class SyncManager private constructor(private val context: Context) {
     private suspend fun performAutoSync() {
         if (_isSyncing.value || syncQueue.isEmpty()) return
 
-        val monitor = NetworkConnectivityMonitor.getInstance(context)
-        if (!monitor.checkRawInternetAvailable()) {
+        val isOnline = NetworkConnectionMonitor.getInstance(context).isOnline()
+        if (!isOnline) {
             return
         }
 
@@ -274,8 +265,8 @@ class SyncManager private constructor(private val context: Context) {
      */
     suspend fun performCloudBackup(backupDataJson: String): Boolean {
         return withContext(Dispatchers.IO) {
-            val monitor = NetworkConnectivityMonitor.getInstance(context)
-            if (!monitor.checkRawInternetAvailable()) {
+            val isOnline = NetworkConnectionMonitor.getInstance(context).isOnline()
+            if (!isOnline) {
                 addLog("Cloud Backup", "Cloud backup failed: No Internet Connection. Local data safe.", SyncLogLevel.WARNING)
                 return@withContext false
             }

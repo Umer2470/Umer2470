@@ -348,7 +348,7 @@ fun SevenDaySalesCanvasChart(
                     val isSelected = index == selectedIndex
 
                     // Draw Bar Background / Active Fill
-                    val barColor = if (isSelected) {
+                    val barColor: Color = if (isSelected) {
                         if (isRevenueMode) BentoPrimary else BentoIndigo
                     } else {
                         if (isRevenueMode) BentoPrimaryLight else BentoIndigoLight
@@ -454,7 +454,7 @@ fun TopCategoriesBreakdownWidget(
     categories: List<CategorySalesPoint>,
     currencySymbol: String
 ) {
-    val categoryColors = listOf(
+    val categoryColors: List<Color> = listOf(
         BentoPrimary, BentoEmerald, BentoIndigo, BentoAmber, BentoPurple, BentoRose
     )
 
@@ -486,7 +486,7 @@ fun TopCategoriesBreakdownWidget(
             ) {
                 categories.forEachIndexed { index, cat ->
                     val color = categoryColors.getOrElse(index) { BentoPrimary }
-                    val weight = cat.percentage.coerceAtLeast(2f)
+                    val weight = cat.percentage.toFloat().coerceAtLeast(0.02f)
                     Box(
                         modifier = Modifier
                             .weight(weight)
