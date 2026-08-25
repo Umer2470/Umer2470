@@ -153,11 +153,17 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE username = :username AND isActive = 1 LIMIT 1")
     suspend fun getUserByUsername(username: String): User?
 
+    @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
+    suspend fun getUserById(id: Long): User?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: User): Long
 
     @Update
     suspend fun updateUser(user: User)
+
+    @Delete
+    suspend fun deleteUser(user: User)
 
     @Query("UPDATE users SET isActive = 0 WHERE id = :id")
     suspend fun deactivateUser(id: Long)

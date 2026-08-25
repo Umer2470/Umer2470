@@ -1,30 +1,50 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.entity.Customer
 import com.example.data.entity.Product
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
-import com.example.ui.components.AppHeader
 import com.example.ui.components.BarCodeScannerDialog
+import com.example.ui.components.ShopLogoAvatar
+import com.example.ui.components.StatusBadge
 import com.example.ui.invoice.InvoiceReceiptDialog
 import com.example.ui.theme.*
+import com.example.ui.viewmodel.CartItem
+import com.example.ui.viewmodel.HeldCart
 import com.example.ui.viewmodel.StoreViewModel
+
+enum class PosTab {
+    CART,
+    CATALOG
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,17 +61,37 @@ fun SalesPosScreen(
     val receivedAmount by viewModel.receivedAmount.collectAsState()
     val paymentType by viewModel.paymentType.collectAsState()
     val storeSettings by viewModel.storeSettings.collectAsState()
+    val businessProfile by viewModel.businessProfile.collectAsState()
+    val activeUser by viewModel.activeUser.collectAsState()
+    val branches by viewModel.branches.collectAsState()
+    val heldCarts by viewModel.heldCarts.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
+    var selectedCategory by remember { mutableStateOf("All") }
+    var currentTab by remember { mutableStateOf(PosTab.CART) }
+
     var showScannerDialog by remember { mutableStateOf(false) }
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var showReceiptDialog by remember { mutableStateOf(false) }
+    var showCustomerDialog by remember { mutableStateOf(false) }
+    var showDiscountDialog by remember { mutableStateOf(false) }
+    var showHeldCartsDialog by remember { mutableStateOf(false) }
+    var showClearConfirmDialog by remember { mutableStateOf(false) }
+
     var lastSale by remember { mutableStateOf<Sale?>(null) }
     var lastSaleItems by remember { mutableStateOf<List<SaleItem>>(emptyList()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var successToast by remember { mutableStateOf<String?>(null) }
 
     val currency = storeSettings?.currencySymbol ?: "Rs"
+    val storeDisplayName = storeSettings?.storeName?.ifBlank { null }
+        ?: businessProfile?.businessName?.ifBlank { null }
+        ?: "CH UMER POS"
+    val branchDisplayName = branches.firstOrNull()?.name ?: "Main Outlet"
+
+    // Calculations
     val subtotal = remember(cart) { cart.sumOf { it.totalPrice } }
+    val totalUnits = remember(cart) { cart.sumOf { it.quantity } }
     val taxAmount = remember(subtotal, discountAmount, taxRatePercent) {
         ((subtotal - discountAmount).coerceAtLeast(0.0) * taxRatePercent) / 100.0
     }
@@ -59,31 +99,42 @@ fun SalesPosScreen(
         (subtotal - discountAmount + taxAmount).coerceAtLeast(0.0)
     }
 
-    val filteredProducts = remember(products, searchQuery) {
-        if (searchQuery.isBlank()) products
-        else {
-            products.filter {
-                it.name.contains(searchQuery, ignoreCase = true) ||
-                it.barcode.contains(searchQuery, ignoreCase = true) ||
-                it.category.contains(searchQuery, ignoreCase = true)
-            }
+    // Dynamic Categories from Products
+    val categories = remember(products) {
+        val unique = products.map { if (it.category.isNotBlank()) it.category.trim() else "General" }.distinct()
+        listOf("All") + unique
+    }
+
+    // Filtered Products
+    val filteredProducts = remember(products, searchQuery, selectedCategory) {
+        products.filter { p ->
+            val matchesCategory = selectedCategory == "All" || p.category.equals(selectedCategory, ignoreCase = true)
+            val matchesQuery = searchQuery.isBlank() ||
+                    p.name.contains(searchQuery, ignoreCase = true) ||
+                    p.barcode.contains(searchQuery, ignoreCase = true) ||
+                    p.category.contains(searchQuery, ignoreCase = true)
+            matchesCategory && matchesQuery
         }
     }
 
+    // Barcode Scanner Dialog
     if (showScannerDialog) {
         BarCodeScannerDialog(
             onBarcodeScanned = { barcode ->
-                val matched = products.find { it.barcode.equals(barcode, ignoreCase = true) }
+                val matched = products.find { it.barcode.equals(barcode.trim(), ignoreCase = true) }
                 if (matched != null) {
                     viewModel.addToCart(matched)
+                    successToast = "Added '${matched.name}' to cart"
+                    currentTab = PosTab.CART
                 } else {
-                    errorMessage = "No product found with barcode: $barcode"
+                    errorMessage = "No product registered with barcode: $barcode"
                 }
             },
             onDismiss = { showScannerDialog = false }
         )
     }
 
+    // Receipt Dialog
     if (showReceiptDialog && lastSale != null) {
         InvoiceReceiptDialog(
             sale = lastSale!!,
@@ -93,54 +144,462 @@ fun SalesPosScreen(
         )
     }
 
+    // Customer Selection Dialog
+    if (showCustomerDialog) {
+        var custSearch by remember { mutableStateOf("") }
+        val filteredCusts = remember(customers, custSearch) {
+            if (custSearch.isBlank()) customers
+            else customers.filter {
+                it.name.contains(custSearch, ignoreCase = true) ||
+                it.phone.contains(custSearch, ignoreCase = true)
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { showCustomerDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Select Customer", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+                    IconButton(onClick = { showCustomerDialog = false }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Navy500)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 380.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = custSearch,
+                        onValueChange = { custSearch = it },
+                        placeholder = { Text("Search by name or phone...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Navy500) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("customer_search_input")
+                    )
+
+                    // Walk-in Customer Quick Option
+                    Surface(
+                        onClick = {
+                            viewModel.setSelectedCustomer(null)
+                            showCustomerDialog = false
+                        },
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (selectedCustomer == null) Emerald50 else Slate100,
+                        border = if (selectedCustomer == null) ButtonDefaults.outlinedButtonBorder else null,
+                        modifier = Modifier.fillMaxWidth().testTag("customer_walkin_option")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Default.PersonOutline, contentDescription = null, tint = if (selectedCustomer == null) Emerald600 else Navy500)
+                                Column {
+                                    Text("Walk-in Customer", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
+                                    Text("Default Cash Counter Sale", fontSize = 11.sp, color = Navy500)
+                                }
+                            }
+                            if (selectedCustomer == null) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = "Selected", tint = Emerald600, modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+
+                    Divider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text("Registered Customers (${filteredCusts.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().weight(1f, fill = false),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(filteredCusts, key = { it.id }) { cust ->
+                            val isSelected = selectedCustomer?.id == cust.id
+                            Surface(
+                                onClick = {
+                                    viewModel.setSelectedCustomer(cust)
+                                    showCustomerDialog = false
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) Blue50 else Color.White,
+                                border = ButtonDefaults.outlinedButtonBorder,
+                                modifier = Modifier.fillMaxWidth().testTag("customer_item_${cust.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(cust.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
+                                        Text("📞 ${cust.phone.ifBlank { "No phone" }}", fontSize = 11.sp, color = Navy500)
+                                    }
+                                    if (cust.balance > 0) {
+                                        StatusBadge(
+                                            text = "Due: $currency %.0f".format(cust.balance),
+                                            backgroundColor = Rose100,
+                                            textColor = Rose600
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    // Held Carts Dialog
+    if (showHeldCartsDialog) {
+        AlertDialog(
+            onDismissRequest = { showHeldCartsDialog = false },
+            title = {
+                Text("Held POS Sales (${heldCarts.size})", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+            },
+            text = {
+                if (heldCarts.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        Text("No held sales at this time.", color = Navy500, fontSize = 13.sp)
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 350.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(heldCarts, key = { it.id }) { held ->
+                            val heldTotal = held.items.sumOf { it.totalPrice }
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = CardDefaults.cardColors(containerColor = Slate50)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(held.note, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
+                                        Text(
+                                            text = "${held.items.size} items • $currency %.2f".format(heldTotal),
+                                            fontSize = 12.sp,
+                                            color = Navy600
+                                        )
+                                        Text(
+                                            text = "Customer: ${held.customer?.name ?: "Walk-in"}",
+                                            fontSize = 11.sp,
+                                            color = Navy500
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Button(
+                                            onClick = {
+                                                viewModel.restoreHeldCart(held)
+                                                showHeldCartsDialog = false
+                                                currentTab = PosTab.CART
+                                            },
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                                            modifier = Modifier.testTag("restore_held_${held.id}")
+                                        ) {
+                                            Text("Recall", fontSize = 11.sp)
+                                        }
+                                        IconButton(
+                                            onClick = { viewModel.deleteHeldCart(held.id) },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Rose600, modifier = Modifier.size(18.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showHeldCartsDialog = false }) {
+                    Text("Close")
+                }
+            }
+        )
+    }
+
+    // Quick Discount Dialog
+    if (showDiscountDialog) {
+        var discVal by remember { mutableStateOf(if (discountAmount > 0) discountAmount.toString() else "") }
+
+        AlertDialog(
+            onDismissRequest = { showDiscountDialog = false },
+            title = { Text("Set Bill Discount ($currency)", fontWeight = FontWeight.Bold, color = Navy900) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Current Subtotal: $currency %.2f".format(subtotal), fontSize = 13.sp, color = Navy700)
+                    OutlinedTextField(
+                        value = discVal,
+                        onValueChange = { discVal = it },
+                        label = { Text("Discount Amount ($currency)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().testTag("discount_modal_input")
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(50.0, 100.0, 200.0, 500.0).forEach { amt ->
+                            OutlinedButton(
+                                onClick = { discVal = amt.toString() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text("$currency %.0f".format(amt), fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val d = discVal.toDoubleOrNull() ?: 0.0
+                        viewModel.setDiscount(d)
+                        showDiscountDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                    modifier = Modifier.testTag("apply_discount_button")
+                ) {
+                    Text("Apply Discount")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    viewModel.setDiscount(0.0)
+                    showDiscountDialog = false
+                }) {
+                    Text("Clear Discount", color = Rose600)
+                }
+            }
+        )
+    }
+
+    // Clear Cart Confirm Dialog
+    if (showClearConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearConfirmDialog = false },
+            title = { Text("Clear Current Cart?", fontWeight = FontWeight.Bold, color = Navy900) },
+            text = { Text("This will remove all ${cart.size} items from the current bill. This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.clearCart()
+                        showClearConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Rose600),
+                    modifier = Modifier.testTag("confirm_clear_cart_button")
+                ) {
+                    Text("Yes, Clear Cart")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Professional Checkout Dialog
     if (showCheckoutDialog) {
         var discInput by remember { mutableStateOf(if (discountAmount > 0) discountAmount.toString() else "") }
-        var recInput by remember { mutableStateOf(if (receivedAmount > 0) receivedAmount.toString() else netAmount.toString()) }
+        var recInput by remember { mutableStateOf(if (receivedAmount > 0) receivedAmount.toString() else "%.2f".format(netAmount)) }
+
+        val recVal = recInput.toDoubleOrNull() ?: 0.0
+        val changeReturn = (recVal - netAmount).coerceAtLeast(0.0)
+        val remainingDue = (netAmount - recVal).coerceAtLeast(0.0)
 
         AlertDialog(
             onDismissRequest = { showCheckoutDialog = false },
-            title = { Text("Complete Sale Checkout") },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Checkout & Payment", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 17.sp)
+                        Text("Customer: ${selectedCustomer?.name ?: "Walk-in Customer"}", fontSize = 12.sp, color = Navy500)
+                    }
+                    IconButton(onClick = { showCheckoutDialog = false }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Navy500)
+                    }
+                }
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Net Payable: $currency %.2f".format(netAmount),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = Navy900
-                    )
-
-                    OutlinedTextField(
-                        value = discInput,
-                        onValueChange = {
-                            discInput = it
-                            viewModel.setDiscount(it.toDoubleOrNull() ?: 0.0)
-                        },
-                        label = { Text("Discount Amount ($currency)") },
-                        singleLine = true,
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Net Payable Banner
+                    Surface(
+                        color = Emerald50,
+                        shape = RoundedCornerShape(10.dp),
+                        border = ButtonDefaults.outlinedButtonBorder,
                         modifier = Modifier.fillMaxWidth()
-                    )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Total Amount Payable", fontSize = 11.sp, color = Navy600, fontWeight = FontWeight.Medium)
+                                Text("${cart.size} Items • %.0f Units".format(totalUnits), fontSize = 10.sp, color = Navy500)
+                            }
+                            Text(
+                                text = "$currency %.2f".format(netAmount),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                color = Emerald700
+                            )
+                        }
+                    }
 
+                    // Payment Method Filter
+                    Text("Payment Method:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy800)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf("Cash", "Bank", "Credit").forEach { mode ->
+                            FilterChip(
+                                selected = paymentType == mode,
+                                onClick = {
+                                    viewModel.setPaymentType(mode)
+                                    if (mode == "Credit") {
+                                        recInput = "0.00"
+                                        viewModel.setReceivedAmount(0.0)
+                                    } else if (mode == "Cash" && recVal == 0.0) {
+                                        recInput = "%.2f".format(netAmount)
+                                        viewModel.setReceivedAmount(netAmount)
+                                    }
+                                },
+                                label = {
+                                    Text(
+                                        text = when(mode) {
+                                            "Cash" -> "💵 Cash"
+                                            "Bank" -> "💳 Bank / Card"
+                                            else -> "📒 Credit (Udhar)"
+                                        },
+                                        fontSize = 11.sp
+                                    )
+                                },
+                                modifier = Modifier.weight(1f).testTag("payment_chip_$mode")
+                            )
+                        }
+                    }
+
+                    // Cash Received / Tendered Input
                     OutlinedTextField(
                         value = recInput,
                         onValueChange = {
                             recInput = it
                             viewModel.setReceivedAmount(it.toDoubleOrNull() ?: 0.0)
                         },
-                        label = { Text("Cash Received ($currency)") },
+                        label = { Text("Tendered / Received Amount ($currency)") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("received_amount_input")
                     )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        listOf("Cash", "Bank", "Credit").forEach { mode ->
-                            FilterChip(
-                                selected = paymentType == mode,
-                                onClick = { viewModel.setPaymentType(mode) },
-                                label = { Text(mode) }
-                            )
+                    // Quick Pay Tendered Buttons
+                    if (paymentType == "Cash") {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("⚡ Quick Pay Tendered:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Surface(
+                                    onClick = {
+                                        recInput = "%.2f".format(netAmount)
+                                        viewModel.setReceivedAmount(netAmount)
+                                    },
+                                    color = if (recVal == netAmount) Gold500 else Gold100,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.weight(1f).testTag("modal_quick_pay_exact")
+                                ) {
+                                    Text(
+                                        text = "Exact",
+                                        textAlign = TextAlign.Center,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (recVal == netAmount) Navy900 else Gold800,
+                                        modifier = Modifier.padding(vertical = 7.dp)
+                                    )
+                                }
+
+                                listOf(500.0, 1000.0, 2000.0, 5000.0).forEach { denom ->
+                                    val isSelected = recVal == denom
+                                    Surface(
+                                        onClick = {
+                                            recInput = denom.toString()
+                                            viewModel.setReceivedAmount(denom)
+                                        },
+                                        color = if (isSelected) Navy900 else Slate100,
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.weight(1f).testTag("modal_quick_pay_${denom.toInt()}")
+                                    ) {
+                                        Text(
+                                            text = "$currency ${denom.toInt()}",
+                                            textAlign = TextAlign.Center,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = if (isSelected) Color.White else Navy800,
+                                            modifier = Modifier.padding(vertical = 7.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Change Return or Outstanding Balance calculation
+                    if (paymentType != "Credit") {
+                        Surface(
+                            color = if (changeReturn > 0) Gold50 else Slate50,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = if (changeReturn > 0) "Change to Return:" else "Remaining Due:",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Navy800
+                                )
+                                Text(
+                                    text = if (changeReturn > 0) "$currency %.2f".format(changeReturn) else "$currency %.2f".format(remainingDue),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (changeReturn > 0) Gold700 else (if (remainingDue > 0) Rose600 else Emerald600)
+                                )
+                            }
                         }
                     }
                 }
@@ -154,6 +613,7 @@ fun SalesPosScreen(
                                 lastSaleItems = items
                                 showCheckoutDialog = false
                                 showReceiptDialog = true
+                                successToast = "Sale recorded successfully! Invoice #${sale.invoiceNumber}"
                             },
                             onError = { err ->
                                 errorMessage = err
@@ -161,14 +621,17 @@ fun SalesPosScreen(
                         )
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
-                    modifier = Modifier.testTag("confirm_checkout_button")
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("confirm_checkout_button")
                 ) {
-                    Text("Charge $currency %.2f".format(netAmount))
+                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Charge & Issue Invoice ($currency %.2f)".format(netAmount), fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCheckoutDialog = false }) {
-                    Text("Cancel")
+                    Text("Back to Cart")
                 }
             }
         )
@@ -176,19 +639,275 @@ fun SalesPosScreen(
 
     Scaffold(
         topBar = {
-            AppHeader(
-                title = "Sales Counter POS",
-                subtitle = "Active Cart: ${cart.size} Items",
-                onBackClick = onNavigateBack,
-                actions = {
-                    IconButton(
-                        onClick = { showScannerDialog = true },
-                        modifier = Modifier.testTag("pos_scanner_button")
+            // PROFESSIONAL POS HEADER
+            Surface(
+                color = Navy900,
+                shadowElevation = 4.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan", tint = Color.White)
+                        // Left: Back button + Store Logo + Store Name & Branch
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            IconButton(
+                                onClick = onNavigateBack,
+                                modifier = Modifier.size(36.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                            }
+
+                            ShopLogoAvatar(
+                                logoUri = null,
+                                size = 34.dp
+                            )
+
+                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                                Text(
+                                    text = storeDisplayName,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "$branchDisplayName • Cashier: ${activeUser?.username ?: "Admin"}",
+                                    color = Slate300,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // Right: Status Badges (Secure POS / Offline Ready) + Barcode Scanner Trigger
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                color = Emerald900.copy(alpha = 0.6f),
+                                shape = RoundedCornerShape(12.dp),
+                                border = ButtonDefaults.outlinedButtonBorder
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(Emerald400)
+                                    )
+                                    Text(
+                                        text = "Offline Ready",
+                                        color = Emerald300,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+
+                            // Quick Scanner Button in Header
+                            FilledIconButton(
+                                onClick = { showScannerDialog = true },
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = Gold500,
+                                    contentColor = Navy900
+                                ),
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .testTag("pos_scanner_button")
+                            ) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", modifier = Modifier.size(20.dp))
+                            }
+                        }
                     }
                 }
-            )
+            }
+        },
+        bottomBar = {
+            // FIXED BOTTOM POS ACTION BAR
+            Surface(
+                color = Color.White,
+                shadowElevation = 16.dp,
+                shape = RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp),
+                border = ButtonDefaults.outlinedButtonBorder
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Quick Pay Row when cart is active
+                    if (cart.isNotEmpty()) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "⚡ Quick Pay:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Navy700
+                            )
+
+                            Surface(
+                                onClick = {
+                                    viewModel.setPaymentType("Cash")
+                                    viewModel.setReceivedAmount(netAmount)
+                                    showCheckoutDialog = true
+                                },
+                                color = Gold100,
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.weight(1f).testTag("quick_pay_exact")
+                            ) {
+                                Text(
+                                    text = "Exact",
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Gold800,
+                                    modifier = Modifier.padding(vertical = 4.dp)
+                                )
+                            }
+
+                            listOf(500.0, 1000.0, 2000.0, 5000.0).forEach { denom ->
+                                Surface(
+                                    onClick = {
+                                        viewModel.setPaymentType("Cash")
+                                        viewModel.setReceivedAmount(denom)
+                                        showCheckoutDialog = true
+                                    },
+                                    color = Slate100,
+                                    shape = RoundedCornerShape(6.dp),
+                                    modifier = Modifier.weight(1f).testTag("quick_pay_${denom.toInt()}")
+                                ) {
+                                    Text(
+                                        text = "$currency ${denom.toInt()}",
+                                        textAlign = TextAlign.Center,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Navy800,
+                                        modifier = Modifier.padding(vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                        Divider(color = Slate200, thickness = 0.5.dp)
+                    }
+
+                    // Summary Strip: Subtotal, Discount & Grand Total
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text("Total Bill:", fontSize = 12.sp, color = Navy500)
+                                if (discountAmount > 0) {
+                                    Surface(color = Rose100, shape = RoundedCornerShape(4.dp)) {
+                                        Text(
+                                            text = "-$currency %.0f Disc".format(discountAmount),
+                                            color = Rose600,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Text(
+                                text = "$currency %.2f".format(netAmount),
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 20.sp,
+                                color = if (cart.isNotEmpty()) Emerald700 else Navy900
+                            )
+                        }
+
+                        // Action Buttons: Hold, Clear, and Large Checkout
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Hold Button
+                            OutlinedButton(
+                                onClick = {
+                                    if (cart.isNotEmpty()) {
+                                        viewModel.holdCurrentCart("Hold #${heldCarts.size + 1}")
+                                        successToast = "Order held safely. Next customer ready!"
+                                    } else if (heldCarts.isNotEmpty()) {
+                                        showHeldCartsDialog = true
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                modifier = Modifier.testTag("hold_sale_button")
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(Icons.Default.PauseCircle, contentDescription = null, modifier = Modifier.size(16.dp), tint = Navy800)
+                                    Text(
+                                        text = if (cart.isNotEmpty()) "Hold" else "Held (${heldCarts.size})",
+                                        fontSize = 12.sp,
+                                        color = Navy800
+                                    )
+                                }
+                            }
+
+                            // Clear Cart Button (if cart has items)
+                            if (cart.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { showClearConfirmDialog = true },
+                                    modifier = Modifier
+                                        .size(38.dp)
+                                        .testTag("clear_cart_button")
+                                ) {
+                                    Icon(Icons.Default.DeleteOutline, contentDescription = "Clear", tint = Rose600)
+                                }
+                            }
+
+                            // Primary Big Checkout Action
+                            Button(
+                                onClick = { showCheckoutDialog = true },
+                                enabled = cart.isNotEmpty(),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Emerald600,
+                                    disabledContainerColor = Slate200
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
+                                modifier = Modifier.testTag("checkout_button")
+                            ) {
+                                Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (cart.isNotEmpty()) "Charge $currency %.0f".format(netAmount) else "Checkout",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         },
         containerColor = Slate50
     ) { paddingValues ->
@@ -196,20 +915,21 @@ fun SalesPosScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(12.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
+            // Notification / Alert Banners
             if (errorMessage != null) {
                 Surface(
                     color = Rose100,
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(12.dp),
+                        modifier = Modifier.padding(10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Rose600, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
                             text = errorMessage!!,
                             color = Rose600,
@@ -217,207 +937,561 @@ fun SalesPosScreen(
                             fontSize = 12.sp
                         )
                         IconButton(onClick = { errorMessage = null }, modifier = Modifier.size(20.dp)) {
-                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Rose600)
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Rose600, modifier = Modifier.size(14.dp))
                         }
                     }
                 }
             }
 
-            // Search Bar
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = { searchQuery = it },
-                placeholder = { Text("Search product name or barcode...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("pos_search_input"),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Navy900,
-                    unfocusedContainerColor = Color.White,
-                    focusedContainerColor = Color.White
-                )
-            )
+            if (successToast != null) {
+                Surface(
+                    color = Emerald100,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = successToast!!,
+                            color = Emerald800,
+                            modifier = Modifier.weight(1f),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        IconButton(onClick = { successToast = null }, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.Close, contentDescription = "Dismiss", tint = Emerald700, modifier = Modifier.size(14.dp))
+                        }
+                    }
+                }
+            }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Main View: Top Cart Summary, Bottom Product Catalog
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            // Customer Selector & Context Strip
+            Surface(
+                color = Color.White,
+                shape = RoundedCornerShape(10.dp),
+                border = ButtonDefaults.outlinedButtonBorder,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                // Products Catalog Column
-                Column(
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Customer Selector Chip
+                    Row(
+                        modifier = Modifier
+                            .clickable { showCustomerDialog = true }
+                            .padding(vertical = 4.dp)
+                            .testTag("customer_select_chip"),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.Person, contentDescription = null, tint = if (selectedCustomer != null) Blue600 else Navy500, modifier = Modifier.size(18.dp))
+                        Column {
+                            Text(
+                                text = selectedCustomer?.name ?: "Walk-in Customer",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Navy900
+                            )
+                            Text(
+                                text = if (selectedCustomer != null) "Tap to change customer" else "Tap to assign registered customer",
+                                fontSize = 10.sp,
+                                color = Navy500
+                            )
+                        }
+                    }
+
+                    // Quick Discount & Held Badge
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (heldCarts.isNotEmpty()) {
+                            Surface(
+                                onClick = { showHeldCartsDialog = true },
+                                color = Gold100,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "⏸ ${heldCarts.size} Held",
+                                    color = Gold800,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        Surface(
+                            onClick = { showDiscountDialog = true },
+                            color = if (discountAmount > 0) Rose100 else Slate100,
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = if (discountAmount > 0) "% -$currency %.0f".format(discountAmount) else "% Discount",
+                                color = if (discountAmount > 0) Rose600 else Navy700,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Search Product & Barcode Area
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = {
+                        searchQuery = it
+                        if (it.isNotBlank()) {
+                            currentTab = PosTab.CATALOG
+                        }
+                    },
+                    placeholder = { Text("Search product name, category or barcode...", fontSize = 12.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Navy500, modifier = Modifier.size(18.dp)) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Navy500, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = Navy900,
+                        unfocusedContainerColor = Color.White,
+                        focusedContainerColor = Color.White
+                    ),
                     modifier = Modifier
                         .weight(1f)
-                        .fillMaxHeight()
-                ) {
-                    Text(
-                        text = "Catalog (${filteredProducts.size})",
-                        fontWeight = FontWeight.Bold,
-                        color = Navy900,
-                        fontSize = 13.sp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
+                        .testTag("pos_search_input")
+                )
 
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                // 1-Tap Barcode Scanner Button
+                FilledIconButton(
+                    onClick = { showScannerDialog = true },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Navy900, contentColor = Gold500),
+                    modifier = Modifier.size(50.dp).testTag("pos_barcode_scan_action")
+                ) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // POS Tab Switcher (Current Bill vs Quick Catalog)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Cart Tab
+                Surface(
+                    onClick = { currentTab = PosTab.CART },
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (currentTab == PosTab.CART) Navy900 else Color.White,
+                    border = if (currentTab != PosTab.CART) ButtonDefaults.outlinedButtonBorder else null,
+                    modifier = Modifier.weight(1f).testTag("pos_tab_cart")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        items(filteredProducts, key = { it.id }) { product ->
-                            Card(
+                        Icon(
+                            Icons.Default.ShoppingCart,
+                            contentDescription = null,
+                            tint = if (currentTab == PosTab.CART) Gold500 else Navy700,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Current Bill (${cart.size})",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (currentTab == PosTab.CART) Color.White else Navy800
+                        )
+                    }
+                }
+
+                // Catalog Tab
+                Surface(
+                    onClick = { currentTab = PosTab.CATALOG },
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (currentTab == PosTab.CATALOG) Navy900 else Color.White,
+                    border = if (currentTab != PosTab.CATALOG) ButtonDefaults.outlinedButtonBorder else null,
+                    modifier = Modifier.weight(1f).testTag("pos_tab_catalog")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 8.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = if (currentTab == PosTab.CATALOG) Gold500 else Navy700,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Catalog (${products.size})",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = if (currentTab == PosTab.CATALOG) Color.White else Navy800
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Category Filter Pills (Visible when in Catalog or search)
+            if (currentTab == PosTab.CATALOG || searchQuery.isNotBlank()) {
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(categories) { cat ->
+                        FilterChip(
+                            selected = selectedCategory == cat,
+                            onClick = { selectedCategory = cat },
+                            label = { Text(cat, fontSize = 11.sp) },
+                            modifier = Modifier.testTag("category_chip_$cat")
+                        )
+                    }
+                }
+            }
+
+            // MAIN WORKSPACE (CART or CATALOG)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                if (currentTab == PosTab.CART) {
+                    // CURRENT CART / BILL VIEW
+                    if (cart.isEmpty()) {
+                        Card(
+                            modifier = Modifier.fillMaxSize(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            border = ButtonDefaults.outlinedButtonBorder
+                        ) {
+                            Column(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { viewModel.addToCart(product) }
-                                    .testTag("product_card_${product.id}"),
-                                shape = RoundedCornerShape(8.dp),
-                                colors = CardDefaults.cardColors(containerColor = Color.White),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                                    .fillMaxSize()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.Center
                             ) {
-                                Row(
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(Slate100),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.AddShoppingCart,
+                                        contentDescription = null,
+                                        tint = Navy500,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "Current Bill is Empty",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = Navy900
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Scan a barcode or browse the product catalog to add items.",
+                                    textAlign = TextAlign.Center,
+                                    fontSize = 12.sp,
+                                    color = Navy500
+                                )
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = { currentTab = PosTab.CATALOG },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Browse Catalog")
+                                    }
+                                    OutlinedButton(
+                                        onClick = { showScannerDialog = true },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Scan")
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(cart, key = { it.product.id }) { item ->
+                                Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .testTag("cart_item_card_${item.product.id}"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = product.name,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontSize = 13.sp,
-                                            color = Navy900
-                                        )
-                                        Text(
-                                            text = "$currency %.2f • Stock: %.0f %s".format(product.salePrice, product.stockQuantity, product.unit),
-                                            fontSize = 11.sp,
-                                            color = Navy500
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { viewModel.addToCart(product) },
-                                        modifier = Modifier.size(32.dp)
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(Icons.Default.AddShoppingCart, contentDescription = "Add", tint = Navy900)
+                                        // Product Details
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.product.name,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = Navy900,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$currency %.2f / %s".format(item.unitPrice, item.product.unit),
+                                                    fontSize = 11.sp,
+                                                    color = Navy600,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                if (item.product.category.isNotBlank()) {
+                                                    Surface(color = Slate100, shape = RoundedCornerShape(4.dp)) {
+                                                        Text(
+                                                            text = item.product.category,
+                                                            fontSize = 9.sp,
+                                                            color = Navy500,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Text(
+                                                text = "Total: $currency %.2f".format(item.totalPrice),
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Emerald700
+                                            )
+                                        }
+
+                                        // Interactive Stepper Quantity Controls
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Surface(
+                                                onClick = {
+                                                    viewModel.updateCartItemQuantity(item.product.id, item.quantity - 1)
+                                                },
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = Slate100,
+                                                modifier = Modifier.size(32.dp).testTag("dec_cart_${item.product.id}")
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(Icons.Default.Remove, contentDescription = "Decrease", modifier = Modifier.size(16.dp), tint = Navy800)
+                                                }
+                                            }
+
+                                            Surface(
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = Slate50,
+                                                border = ButtonDefaults.outlinedButtonBorder,
+                                                modifier = Modifier.height(32.dp).widthIn(min = 36.dp)
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp)) {
+                                                    Text(
+                                                        text = if (item.quantity % 1.0 == 0.0) "%.0f".format(item.quantity) else "%.1f".format(item.quantity),
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 13.sp,
+                                                        color = Navy900
+                                                    )
+                                                }
+                                            }
+
+                                            Surface(
+                                                onClick = {
+                                                    viewModel.updateCartItemQuantity(item.product.id, item.quantity + 1)
+                                                },
+                                                shape = RoundedCornerShape(6.dp),
+                                                color = Navy900,
+                                                modifier = Modifier.size(32.dp).testTag("inc_cart_${item.product.id}")
+                                            ) {
+                                                Box(contentAlignment = Alignment.Center) {
+                                                    Icon(Icons.Default.Add, contentDescription = "Increase", modifier = Modifier.size(16.dp), tint = Color.White)
+                                                }
+                                            }
+
+                                            IconButton(
+                                                onClick = { viewModel.removeFromCart(item.product.id) },
+                                                modifier = Modifier.size(28.dp).testTag("remove_cart_${item.product.id}")
+                                            ) {
+                                                Icon(Icons.Default.Close, contentDescription = "Remove", tint = Rose600, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
-                }
-
-                // Active Cart Column
-                Card(
-                    modifier = Modifier
-                        .weight(1.1f)
-                        .fillMaxHeight(),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                } else {
+                    // QUICK CATALOG GRID VIEW
+                    if (filteredProducts.isEmpty()) {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "Cart (${cart.size})",
-                                fontWeight = FontWeight.Bold,
-                                color = Navy900,
-                                fontSize = 14.sp
+                                text = "No products found matching '$searchQuery'",
+                                fontSize = 13.sp,
+                                color = Navy500
                             )
-                            if (cart.isNotEmpty()) {
-                                TextButton(
-                                    onClick = { viewModel.clearCart() },
-                                    contentPadding = PaddingValues(0.dp)
-                                ) {
-                                    Text("Clear", color = Rose600, fontSize = 11.sp)
-                                }
-                            }
                         }
+                    } else {
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 160.dp),
+                            modifier = Modifier.fillMaxSize(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(filteredProducts, key = { it.id }) { product ->
+                                val inCartItem = cart.find { it.product.id == product.id }
 
-                        Divider(modifier = Modifier.padding(vertical = 6.dp))
-
-                        if (cart.isEmpty()) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .fillMaxWidth(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Cart is empty", color = Navy500, fontSize = 12.sp)
-                            }
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.weight(1f),
-                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                items(cart, key = { it.product.id }) { item ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .background(Slate50, RoundedCornerShape(6.dp))
-                                            .padding(6.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(item.product.name, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                            Text("$currency %.2f x %.1f".format(item.unitPrice, item.quantity), fontSize = 10.sp, color = Navy500)
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.addToCart(product)
+                                            successToast = "+1 '${product.name}'"
                                         }
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            IconButton(
-                                                onClick = { viewModel.updateCartItemQuantity(item.product.id, item.quantity - 1) },
-                                                modifier = Modifier.size(24.dp)
+                                        .testTag("product_card_${product.id}"),
+                                    shape = RoundedCornerShape(10.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (inCartItem != null) Blue50 else Color.White
+                                    ),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                    border = if (inCartItem != null) ButtonDefaults.outlinedButtonBorder else null
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Surface(
+                                                color = Slate100,
+                                                shape = RoundedCornerShape(4.dp)
                                             ) {
-                                                Icon(Icons.Default.Remove, contentDescription = "Decrease", modifier = Modifier.size(14.dp))
+                                                Text(
+                                                    text = product.category.ifBlank { "General" },
+                                                    fontSize = 9.sp,
+                                                    color = Navy600,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
                                             }
-                                            Text("%.0f".format(item.quantity), fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 4.dp))
-                                            IconButton(
-                                                onClick = { viewModel.updateCartItemQuantity(item.product.id, item.quantity + 1) },
-                                                modifier = Modifier.size(24.dp)
+
+                                            if (inCartItem != null) {
+                                                Surface(
+                                                    color = Emerald100,
+                                                    shape = RoundedCornerShape(10.dp)
+                                                ) {
+                                                    Text(
+                                                        text = "x%.0f in cart".format(inCartItem.quantity),
+                                                        fontSize = 9.sp,
+                                                        color = Emerald700,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Text(
+                                            text = product.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Navy900,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(
+                                                    text = "$currency %.2f".format(product.salePrice),
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    fontSize = 14.sp,
+                                                    color = Emerald700
+                                                )
+                                                Text(
+                                                    text = "Stock: %.0f %s".format(product.stockQuantity, product.unit),
+                                                    fontSize = 10.sp,
+                                                    color = if (product.stockQuantity <= product.minStockAlert) Rose600 else Navy500
+                                                )
+                                            }
+
+                                            FilledIconButton(
+                                                onClick = {
+                                                    viewModel.addToCart(product)
+                                                    successToast = "+1 '${product.name}'"
+                                                },
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = IconButtonDefaults.filledIconButtonColors(
+                                                    containerColor = Navy900,
+                                                    contentColor = Color.White
+                                                ),
+                                                modifier = Modifier.size(32.dp)
                                             ) {
-                                                Icon(Icons.Default.Add, contentDescription = "Increase", modifier = Modifier.size(14.dp))
+                                                Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(16.dp))
                                             }
                                         }
                                     }
                                 }
                             }
-                        }
-
-                        Divider(modifier = Modifier.padding(vertical = 6.dp))
-
-                        // Totals & Checkout Button
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Net Total:", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 14.sp)
-                            Text("$currency %.2f".format(netAmount), fontWeight = FontWeight.Bold, color = Emerald600, fontSize = 16.sp)
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Button(
-                            onClick = { showCheckoutDialog = true },
-                            enabled = cart.isNotEmpty(),
-                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("checkout_button")
-                        ) {
-                            Icon(Icons.Default.Payment, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Checkout ($currency %.0f)".format(netAmount))
                         }
                     }
                 }

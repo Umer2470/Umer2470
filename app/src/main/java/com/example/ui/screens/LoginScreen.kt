@@ -27,6 +27,7 @@ fun LoginScreen(
     var username by remember { mutableStateOf("admin") }
     var pin by remember { mutableStateOf("1234") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showRecoveryDialog by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -116,7 +117,114 @@ fun LoginScreen(
                 ) {
                     Text("Unlock POS Terminal")
                 }
+
+                TextButton(
+                    onClick = { showRecoveryDialog = true },
+                    modifier = Modifier.testTag("login_forgot_password_button")
+                ) {
+                    Text(
+                        text = "Forgot PIN / Emergency Password Recovery",
+                        fontSize = 12.sp,
+                        color = Gold600,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
             }
+        }
+
+        if (showRecoveryDialog) {
+            var recoveryUsername by remember { mutableStateOf(username) }
+            var recoveryKey by remember { mutableStateOf("") }
+            var newPin by remember { mutableStateOf("") }
+            var recoveryStatus by remember { mutableStateOf<String?>(null) }
+            var recoverySuccess by remember { mutableStateOf(false) }
+
+            AlertDialog(
+                onDismissRequest = { showRecoveryDialog = false },
+                title = {
+                    Text(
+                        text = "Security Password Recovery",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy900
+                    )
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Enter your username, 20-character emergency code, 12-word passphrase, or Master Admin Key to reset your PIN.",
+                            fontSize = 12.sp,
+                            color = Navy600
+                        )
+
+                        OutlinedTextField(
+                            value = recoveryUsername,
+                            onValueChange = { recoveryUsername = it },
+                            label = { Text("Username") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("recovery_username_input")
+                        )
+
+                        OutlinedTextField(
+                            value = recoveryKey,
+                            onValueChange = { recoveryKey = it },
+                            label = { Text("Recovery Key / Passphrase / Master PIN") },
+                            placeholder = { Text("e.g. 03080018035 or 20-char code") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("recovery_key_input")
+                        )
+
+                        OutlinedTextField(
+                            value = newPin,
+                            onValueChange = { newPin = it },
+                            label = { Text("New PIN / Password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().testTag("recovery_new_pin_input")
+                        )
+
+                        if (recoveryStatus != null) {
+                            Text(
+                                text = recoveryStatus!!,
+                                color = if (recoverySuccess) Emerald600 else Rose600,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (recoveryUsername.isBlank() || recoveryKey.isBlank() || newPin.isBlank()) {
+                                recoveryStatus = "Please fill in all recovery fields."
+                                recoverySuccess = false
+                            } else {
+                                viewModel.resetUserPin(recoveryUsername, newPin, recoveryKey) { success, msg ->
+                                    recoverySuccess = success
+                                    recoveryStatus = msg
+                                    if (success) {
+                                        pin = newPin
+                                        username = recoveryUsername
+                                        errorMessage = null
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                        modifier = Modifier.testTag("recovery_confirm_button")
+                    ) {
+                        Text("Reset PIN")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRecoveryDialog = false }) {
+                        Text("Close")
+                    }
+                }
+            )
         }
     }
 }
