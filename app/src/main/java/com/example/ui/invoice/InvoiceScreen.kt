@@ -27,6 +27,14 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
+enum class InvoiceFilter {
+    ALL,
+    PAID,
+    DUE,
+    CASH,
+    CREDIT
+}
+
 @Composable
 fun InvoiceScreen(
     viewModel: StoreViewModel,
@@ -34,7 +42,10 @@ fun InvoiceScreen(
 ) {
     val sales by viewModel.sales.collectAsState()
     val storeSettings by viewModel.storeSettings.collectAsState()
+    val currency = storeSettings?.currencySymbol ?: "Rs"
+
     var searchQuery by remember { mutableStateOf("") }
+    var selectedFilter by remember { mutableStateOf(InvoiceFilter.ALL) }
     var selectedSaleForReceipt by remember { mutableStateOf<Pair<Sale, List<SaleItem>>?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -48,13 +59,24 @@ fun InvoiceScreen(
         )
     }
 
-    val filteredSales = remember(sales, searchQuery) {
-        if (searchQuery.isBlank()) sales
-        else {
-            sales.filter {
-                it.invoiceNumber.contains(searchQuery, ignoreCase = true) ||
-                it.customerName.contains(searchQuery, ignoreCase = true)
+    val totalRevenue = remember(sales) { sales.sumOf { it.netAmount } }
+    val totalCollected = remember(sales) { sales.sumOf { it.paidAmount } }
+    val totalDue = remember(sales) { sales.sumOf { it.dueAmount } }
+
+    val filteredSales = remember(sales, searchQuery, selectedFilter) {
+        sales.filter { sale ->
+            val matchesSearch = if (searchQuery.isBlank()) true else {
+                sale.invoiceNumber.contains(searchQuery, ignoreCase = true) ||
+                sale.customerName.contains(searchQuery, ignoreCase = true)
             }
+            val matchesFilter = when (selectedFilter) {
+                InvoiceFilter.ALL -> true
+                InvoiceFilter.PAID -> sale.dueAmount <= 0
+                InvoiceFilter.DUE -> sale.dueAmount > 0
+                InvoiceFilter.CASH -> sale.paymentType.equals("Cash", ignoreCase = true)
+                InvoiceFilter.CREDIT -> sale.paymentType.equals("Credit", ignoreCase = true) || sale.dueAmount > 0
+            }
+            matchesSearch && matchesFilter
         }
     }
 
@@ -62,7 +84,7 @@ fun InvoiceScreen(
         topBar = {
             AppHeader(
                 title = "Invoices & Receipts",
-                subtitle = "${sales.size} Total Transactions",
+                subtitle = "${sales.size} Total Invoices • Full Audit Trail",
                 onBackClick = onNavigateBack
             )
         },
@@ -74,25 +96,119 @@ fun InvoiceScreen(
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
-            // Search field
+            // Metrics Summary
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Navy900)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Gross Sales", fontSize = 11.sp, color = Slate300)
+                        Text(
+                            "$currency %.0f".format(totalRevenue),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+                    VerticalDivider(
+                        modifier = Modifier
+                            .height(30.dp)
+                            .padding(horizontal = 8.dp),
+                        color = Navy700
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Collected", fontSize = 11.sp, color = Slate300)
+                        Text(
+                            "$currency %.0f".format(totalCollected),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Emerald400
+                        )
+                    }
+                    VerticalDivider(
+                        modifier = Modifier
+                            .height(30.dp)
+                            .padding(horizontal = 8.dp),
+                        color = Navy700
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Pending Due", fontSize = 11.sp, color = Slate300)
+                        Text(
+                            "$currency %.0f".format(totalDue),
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Rose400
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Search Field
             OutlinedTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                label = { Text("Search by Invoice # or Customer") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search") },
+                label = { Text("Search Invoice # or Customer...") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = Navy700) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear")
+                        }
+                    }
+                },
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("invoice_search_input"),
                 singleLine = true,
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(10.dp),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedBorderColor = Navy900,
+                    unfocusedBorderColor = Slate300,
                     unfocusedContainerColor = Color.White,
                     focusedContainerColor = Color.White
                 )
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Filter Chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FilterChip(
+                    selected = selectedFilter == InvoiceFilter.ALL,
+                    onClick = { selectedFilter = InvoiceFilter.ALL },
+                    label = { Text("All (${sales.size})", fontSize = 12.sp) }
+                )
+                FilterChip(
+                    selected = selectedFilter == InvoiceFilter.PAID,
+                    onClick = { selectedFilter = InvoiceFilter.PAID },
+                    label = { Text("Paid", fontSize = 12.sp) }
+                )
+                FilterChip(
+                    selected = selectedFilter == InvoiceFilter.DUE,
+                    onClick = { selectedFilter = InvoiceFilter.DUE },
+                    label = { Text("Pending Due", fontSize = 12.sp) }
+                )
+                FilterChip(
+                    selected = selectedFilter == InvoiceFilter.CREDIT,
+                    onClick = { selectedFilter = InvoiceFilter.CREDIT },
+                    label = { Text("Credit", fontSize = 12.sp) }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             if (filteredSales.isEmpty()) {
                 Box(
@@ -100,8 +216,8 @@ fun InvoiceScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = if (searchQuery.isBlank()) "No invoices created yet." else "No invoices match your search.",
-                        color = Navy500,
+                        text = if (searchQuery.isBlank()) "No invoices match the selected filter." else "No invoices match '$searchQuery'",
+                        color = Navy600,
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -113,7 +229,6 @@ fun InvoiceScreen(
                     items(filteredSales, key = { it.id }) { sale ->
                         val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                         val formattedDate = dateFormat.format(Date(sale.createdAt))
-                        val currency = storeSettings?.currencySymbol ?: "Rs"
 
                         Card(
                             modifier = Modifier
@@ -129,12 +244,12 @@ fun InvoiceScreen(
                                 .testTag("invoice_item_${sale.id}"),
                             colors = CardDefaults.cardColors(containerColor = Color.White),
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = RoundedCornerShape(10.dp)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(16.dp),
+                                    .padding(14.dp),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
@@ -148,21 +263,22 @@ fun InvoiceScreen(
                                         )
                                         Spacer(modifier = Modifier.width(8.dp))
                                         StatusBadge(
-                                            text = if (sale.dueAmount <= 0) "Paid" else "Due: $currency %.0f".format(sale.dueAmount),
+                                            text = if (sale.dueAmount <= 0) "PAID" else "DUE: $currency %.0f".format(sale.dueAmount),
                                             backgroundColor = if (sale.dueAmount <= 0) Emerald100 else Rose100,
-                                            textColor = if (sale.dueAmount <= 0) Emerald600 else Rose600
+                                            textColor = if (sale.dueAmount <= 0) Emerald700 else Rose600
                                         )
                                     }
                                     Spacer(modifier = Modifier.height(4.dp))
                                     Text(
                                         text = "Customer: ${sale.customerName}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Navy600
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Navy800
                                     )
                                     Text(
-                                        text = "$formattedDate • Cashier: ${sale.cashierName}",
+                                        text = "$formattedDate • Pay: ${sale.paymentType}",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = Navy500
+                                        color = Navy600
                                     )
                                 }
 
@@ -170,24 +286,32 @@ fun InvoiceScreen(
                                     Text(
                                         text = "$currency %.2f".format(sale.netAmount),
                                         style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
+                                        fontWeight = FontWeight.Black,
                                         color = Navy900
                                     )
                                     Spacer(modifier = Modifier.height(4.dp))
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Icon(
-                                            imageVector = Icons.Default.ReceiptLong,
-                                            contentDescription = "View Receipt",
-                                            tint = Navy600,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = "View",
-                                            fontSize = 12.sp,
-                                            color = Navy600,
-                                            fontWeight = FontWeight.SemiBold
-                                        )
+                                    Surface(
+                                        color = Navy100,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.ReceiptLong,
+                                                contentDescription = "View",
+                                                tint = Navy900,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Receipt",
+                                                fontSize = 11.sp,
+                                                color = Navy900,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
