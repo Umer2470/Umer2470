@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -22,8 +23,10 @@ import androidx.compose.ui.unit.sp
 import com.example.data.entity.StoreSettings
 import com.example.ui.components.AppHeader
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
+import com.example.util.BiometricPromptHelper
 
 @Composable
 fun SettingsScreen(
@@ -36,6 +39,12 @@ fun SettingsScreen(
     val accentColorIndex by viewModel.accentColorIndex.collectAsState()
     val fontSizeScale by viewModel.fontSizeScale.collectAsState()
     val fontFamilyChoice by viewModel.fontFamilyChoice.collectAsState()
+    val isBiometricEnabled by viewModel.isBiometricAuthEnabled.collectAsState()
+
+    val context = LocalContext.current
+    val (isBioHardwareAvailable, bioStatusText) = remember(context) { BiometricPromptHelper.isBiometricAvailable(context) }
+    var biometricTestMessage by remember { mutableStateOf<String?>(null) }
+    var isBiometricTestSuccess by remember { mutableStateOf(false) }
 
     var storeName by remember(storeSettings) { mutableStateOf(storeSettings?.storeName ?: "CH UMER POS.03080018035") }
     var ownerName by remember(storeSettings) { mutableStateOf(storeSettings?.ownerName ?: "CH UMER") }
@@ -457,8 +466,124 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. Security & Disaster Recovery
-            SectionHeader(title = "Security & Disaster Recovery", subtitle = "Master access codes and emergency passphrases")
+            // 4. Biometric Security & Disaster Recovery
+            SectionHeader(title = "Biometric Security & Authentication", subtitle = "Fingerprint & Face unlock for terminal access")
+
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("settings_biometric_card"),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = if (isBiometricEnabled) Emerald100 else Slate100,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Fingerprint,
+                                    contentDescription = "Biometric Icon",
+                                    tint = if (isBiometricEnabled) Emerald700 else Navy500,
+                                    modifier = Modifier.padding(8.dp).size(24.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "Biometric Terminal Unlock",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Navy900
+                                )
+                                Text(
+                                    text = "Fingerprint or Face Unlock on Login",
+                                    fontSize = 12.sp,
+                                    color = Navy500
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = isBiometricEnabled,
+                            onCheckedChange = { viewModel.setBiometricAuthEnabled(it) },
+                            modifier = Modifier.testTag("biometric_toggle_switch")
+                        )
+                    }
+
+                    Surface(
+                        color = if (isBioHardwareAvailable) Emerald50 else Amber50,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isBioHardwareAvailable) Icons.Default.CheckCircle else Icons.Default.Info,
+                                contentDescription = null,
+                                tint = if (isBioHardwareAvailable) Emerald700 else Amber700,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = bioStatusText,
+                                fontSize = 12.sp,
+                                color = if (isBioHardwareAvailable) Emerald800 else Amber800,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    if (isBiometricEnabled) {
+                        OutlinedButton(
+                            onClick = {
+                                BiometricPromptHelper.authenticateUser(
+                                    context = context,
+                                    title = "Test Biometric Sensor",
+                                    subtitle = "Authenticate to verify biometric sensor status",
+                                    negativeButtonText = "Cancel",
+                                    onSuccess = {
+                                        isBiometricTestSuccess = true
+                                        biometricTestMessage = "Biometric authentication verified successfully!"
+                                    },
+                                    onError = { error ->
+                                        isBiometricTestSuccess = false
+                                        biometricTestMessage = error
+                                    }
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("test_biometric_button")
+                        ) {
+                            Icon(Icons.Default.Verified, contentDescription = null, tint = Emerald600)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Test Biometric Sensor", color = Navy900)
+                        }
+
+                        if (biometricTestMessage != null) {
+                            Text(
+                                text = biometricTestMessage!!,
+                                color = if (isBiometricTestSuccess) Emerald700 else Rose600,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 5. Emergency Recovery Credentials
+            SectionHeader(title = "Disaster Recovery & Master Passphrase", subtitle = "Master access codes and emergency recovery keys")
 
             Card(
                 modifier = Modifier.fillMaxWidth().testTag("settings_security_card"),
@@ -493,7 +618,7 @@ fun SettingsScreen(
                 }
             }
 
-            // 5. Administration & Management Modules
+            // 6. Administration & Management Modules
             SectionHeader(title = "Administration & System Modules", subtitle = "Direct access to management hubs")
 
             listOf(

@@ -647,66 +647,16 @@ fun DashboardScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Financial KPIs
-                SectionHeader(title = "Business Overview", subtitle = "Real-time ledger summary")
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    KpiCard(
-                        title = "Total Sales",
-                        value = "$currency %.0f".format(totalRevenue),
-                        icon = Icons.Default.TrendingUp,
-                        color = Emerald600,
-                        modifier = Modifier.weight(1f)
-                    )
-                    KpiCard(
-                        title = "Receivables (Due)",
-                        value = "$currency %.0f".format(totalDue),
-                        icon = Icons.Default.AccountBalanceWallet,
-                        color = Rose600,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    KpiCard(
-                        title = "Total Products",
-                        value = "${products.size}",
-                        icon = Icons.Default.Category,
-                        color = Navy900,
-                        modifier = Modifier.weight(1f)
-                    )
-                    KpiCard(
-                        title = "Low Stock Alert",
-                        value = "$lowStockCount Items",
-                        icon = Icons.Default.WarningAmber,
-                        color = if (lowStockCount > 0) Gold600 else Emerald600,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Daily Sales Trend & Category Analytics Chart
-                AnalyticsChartsWidget(
-                    salesTrend = salesTrend,
-                    topCategories = topCategories,
-                    currencySymbol = currency
+                // 1. STORE MODULE / STORE MALL (Directly below Header / License status)
+                SectionHeader(
+                    title = "STORE MODULE / STORE MALL",
+                    subtitle = "Select store module & management terminal"
                 )
 
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Quick Actions Hub
-                SectionHeader(title = "Modules & Management", subtitle = "Select module to operate")
-
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.testTag("dashboard_store_module_section")
+                ) {
                     quickActions.chunked(3).forEach { rowItems ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -755,6 +705,181 @@ fun DashboardScreen(
                             }
                             if (rowItems.size < 3) {
                                 Spacer(modifier = Modifier.weight(3f - rowItems.size))
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 2. BUSINESS OVERVIEW (Real-time financial & inventory KPIs)
+                SectionHeader(
+                    title = "Business Overview",
+                    subtitle = "Real-time sales & ledger summary"
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    KpiCard(
+                        title = "Total Sales",
+                        value = "$currency %.0f".format(totalRevenue),
+                        icon = Icons.Default.TrendingUp,
+                        color = Emerald600,
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiCard(
+                        title = "Receivables (Due)",
+                        value = "$currency %.0f".format(totalDue),
+                        icon = Icons.Default.AccountBalanceWallet,
+                        color = Rose600,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    KpiCard(
+                        title = "Total Products",
+                        value = "${products.size}",
+                        icon = Icons.Default.Category,
+                        color = Navy900,
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiCard(
+                        title = "Low Stock Alert",
+                        value = "$lowStockCount Items",
+                        icon = Icons.Default.WarningAmber,
+                        color = if (lowStockCount > 0) Gold600 else Emerald600,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 3. BUSINESS ANALYTICS (Daily Sales Trend & Category Analytics Chart)
+                SectionHeader(
+                    title = "Business Analytics",
+                    subtitle = "Sales trends & category performance"
+                )
+
+                AnalyticsChartsWidget(
+                    salesTrend = salesTrend,
+                    topCategories = topCategories,
+                    currencySymbol = currency
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // 4. RECENT SALES & ACTIVITY
+                SectionHeader(
+                    title = "Recent Sales & Activity",
+                    subtitle = "Latest terminal transactions"
+                )
+
+                if (sales.isEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Color.White),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ReceiptLong,
+                                contentDescription = null,
+                                tint = Slate300,
+                                modifier = Modifier.size(40.dp)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "No sales recorded yet today",
+                                fontSize = 13.sp,
+                                color = Navy500,
+                                fontWeight = FontWeight.Medium
+                            )
+                            Text(
+                                text = "Start selling by opening Sales POS above",
+                                fontSize = 11.sp,
+                                color = Navy400
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.testTag("dashboard_recent_sales_list")
+                    ) {
+                        sales.take(5).forEach { sale ->
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onNavigate("invoice") },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Surface(
+                                            color = Emerald50,
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Receipt,
+                                                contentDescription = null,
+                                                tint = Emerald600,
+                                                modifier = Modifier.padding(6.dp).size(20.dp)
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = sale.invoiceNumber,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = Navy900
+                                            )
+                                            Text(
+                                                text = "${sale.customerName} • ${sale.paymentType}",
+                                                fontSize = 11.sp,
+                                                color = Navy500
+                                            )
+                                        }
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = "$currency %.2f".format(sale.netAmount),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Emerald700
+                                        )
+                                        val formattedDate = java.text.SimpleDateFormat("dd MMM, hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(sale.createdAt))
+                                        Text(
+                                            text = formattedDate,
+                                            fontSize = 10.sp,
+                                            color = Navy400
+                                        )
+                                    }
+                                }
                             }
                         }
                     }

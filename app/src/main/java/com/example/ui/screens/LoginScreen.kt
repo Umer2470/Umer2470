@@ -4,13 +4,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -18,12 +21,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
+import com.example.util.BiometricPromptHelper
 
 @Composable
 fun LoginScreen(
     viewModel: StoreViewModel,
     onLoginSuccess: () -> Unit
 ) {
+    val context = LocalContext.current
+    val isBiometricEnabled by viewModel.isBiometricAuthEnabled.collectAsState()
+    val (isBioAvailable, bioStatusMsg) = remember(context) { BiometricPromptHelper.isBiometricAvailable(context) }
+
     var username by remember { mutableStateOf("admin") }
     var pin by remember { mutableStateOf("1234") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -75,6 +83,64 @@ fun LoginScreen(
                     fontSize = 12.sp,
                     color = Navy500
                 )
+
+                // Biometric Quick Unlock Option (if enabled and available)
+                if (isBiometricEnabled) {
+                    OutlinedButton(
+                        onClick = {
+                            errorMessage = null
+                            BiometricPromptHelper.authenticateUser(
+                                context = context,
+                                title = "CH UMER POS Unlock",
+                                subtitle = "Verify fingerprint or face to access terminal",
+                                negativeButtonText = "Use PIN",
+                                onSuccess = {
+                                    errorMessage = null
+                                    onLoginSuccess()
+                                },
+                                onError = { error ->
+                                    errorMessage = error
+                                }
+                            )
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Emerald700,
+                            containerColor = Emerald50
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.5.dp, Emerald600),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("biometric_unlock_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Fingerprint,
+                            contentDescription = "Biometric Unlock",
+                            tint = Emerald600,
+                            modifier = Modifier.size(22.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Unlock with Fingerprint / Face",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = Slate200)
+                        Text(
+                            text = "  OR USE PIN  ",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Navy400
+                        )
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = Slate200)
+                    }
+                }
 
                 OutlinedTextField(
                     value = username,

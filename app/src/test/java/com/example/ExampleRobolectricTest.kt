@@ -78,5 +78,14 @@ class ExampleRobolectricTest {
 
     // Invoice structure formatting test is validated in PosCalculationUnitTest
   }
+
+  @Test
+  fun `test biometric helper status check runs safely`() {
+    val context = ApplicationProvider.getApplicationContext<Context>()
+    val status = com.example.util.BiometricPromptHelper.getBiometricStatus(context)
+    assertNotNull(status)
+    val (isAvail, msg) = com.example.util.BiometricPromptHelper.isBiometricAvailable(context)
+    assertNotNull(msg)
+  }
 }
 

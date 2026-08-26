@@ -602,6 +602,24 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _fontFamilyChoice = MutableStateFlow(prefs.getString("font_family", "Default") ?: "Default")
     val fontFamilyChoice: StateFlow<String> = _fontFamilyChoice.asStateFlow()
 
+    private val _isBiometricAuthEnabled = MutableStateFlow(prefs.getBoolean("biometric_auth_enabled", true))
+    val isBiometricAuthEnabled: StateFlow<Boolean> = _isBiometricAuthEnabled.asStateFlow()
+
+    fun setBiometricAuthEnabled(enabled: Boolean) {
+        _isBiometricAuthEnabled.value = enabled
+        prefs.edit().putBoolean("biometric_auth_enabled", enabled).apply()
+        viewModelScope.launch(Dispatchers.IO) {
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = if (enabled) "Biometrics Enabled" else "Biometrics Disabled",
+                    module = "Security",
+                    details = "Biometric authentication (fingerprint / face unlock) was ${if (enabled) "enabled" else "disabled"}",
+                    performedBy = _activeUser.value?.fullName ?: "Admin"
+                )
+            )
+        }
+    }
+
     fun setThemeMode(mode: String) {
         _themeMode.value = mode
         prefs.edit().putString("theme_mode", mode).apply()

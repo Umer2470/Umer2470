@@ -208,6 +208,18 @@ fun StoreAccessManagementScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Icon(Icons.Default.Fingerprint, contentDescription = null, tint = Emerald600)
+                        Column {
+                            Text("Biometric Multi-Factor Authentication", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
+                            Text("Fingerprint & Face unlock access control enabled for secure cashier/admin unlock", fontSize = 11.sp, color = Navy500)
+                        }
+                    }
+                    Divider()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Icon(Icons.Default.VerifiedUser, contentDescription = null, tint = Emerald600)
                         Column {
                             Text("Hardware Identity Binding", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)

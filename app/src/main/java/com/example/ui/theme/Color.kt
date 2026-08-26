@@ -51,9 +51,13 @@ val Teal400 = Color(0xFF2DD4BF)
 val Teal100 = Color(0xFFCCFBF1)
 val Teal50 = Color(0xFFF0FDFA)
 
+val Amber900 = Color(0xFF78350F)
+val Amber800 = Color(0xFF92400E)
+val Amber700 = Color(0xFFB45309)
 val Amber600 = Color(0xFFD97706)
 val Amber500 = Color(0xFFF59E0B)
 val Amber100 = Color(0xFFFEF3C7)
+val Amber50 = Color(0xFFFFFBEB)
 
 val AmoledBlack = Color(0xFF000000)
 val AmoledSurface = Color(0xFF121212)
