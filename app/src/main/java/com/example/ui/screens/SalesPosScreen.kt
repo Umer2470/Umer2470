@@ -63,6 +63,8 @@ fun SalesPosScreen(
     val storeSettings by viewModel.storeSettings.collectAsState()
     val businessProfile by viewModel.businessProfile.collectAsState()
     val activeUser by viewModel.activeUser.collectAsState()
+    val activeCashierName by viewModel.activeCashierName.collectAsState()
+    val users by viewModel.users.collectAsState()
     val branches by viewModel.branches.collectAsState()
     val heldCarts by viewModel.heldCarts.collectAsState()
 
@@ -77,6 +79,7 @@ fun SalesPosScreen(
     var showDiscountDialog by remember { mutableStateOf(false) }
     var showHeldCartsDialog by remember { mutableStateOf(false) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
+    var showCashierSelectorDialog by remember { mutableStateOf(false) }
 
     var lastSale by remember { mutableStateOf<Sale?>(null) }
     var lastSaleItems by remember { mutableStateOf<List<SaleItem>>(emptyList()) }
@@ -253,6 +256,130 @@ fun SalesPosScreen(
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    // Cashier Selector Dialog
+    if (showCashierSelectorDialog) {
+        var customCashierName by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showCashierSelectorDialog = false },
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Select Active Cashier", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+                        Text("Assign operator for sales & invoices", fontSize = 11.sp, color = Navy500)
+                    }
+                    IconButton(onClick = { showCashierSelectorDialog = false }, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Navy500)
+                    }
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Current Active Cashier Notice
+                    Surface(
+                        color = Navy900,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Badge, contentDescription = null, tint = Gold500, modifier = Modifier.size(18.dp))
+                            Column {
+                                Text("Current Active Cashier", fontSize = 10.sp, color = Slate300)
+                                Text(activeCashierName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                            }
+                        }
+                    }
+
+                    Text("Available Staff & Cashiers:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy800)
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(users, key = { it.id }) { u ->
+                            val isSelected = activeCashierName.equals(u.fullName, ignoreCase = true) ||
+                                    (u.fullName.isBlank() && activeCashierName.equals(u.username, ignoreCase = true))
+                            Surface(
+                                onClick = {
+                                    val name = u.fullName.ifBlank { u.username }
+                                    viewModel.setActiveCashierName(name, u)
+                                    showCashierSelectorDialog = false
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (isSelected) Emerald50 else Slate50,
+                                border = if (isSelected) ButtonDefaults.outlinedButtonBorder else null,
+                                modifier = Modifier.fillMaxWidth().testTag("select_pos_cashier_${u.id}")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = u.fullName.ifBlank { u.username },
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Navy900
+                                        )
+                                        Text("Role: ${u.role} • @${u.username}", fontSize = 11.sp, color = Navy600)
+                                    }
+                                    if (isSelected) {
+                                        StatusBadge(text = "ACTIVE", backgroundColor = Emerald100, textColor = Emerald700)
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+
+                    Text("Or Enter Custom Cashier Name:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = customCashierName,
+                            onValueChange = { customCashierName = it },
+                            placeholder = { Text("e.g. Muhammad Umer", fontSize = 12.sp) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("custom_cashier_input")
+                        )
+                        Button(
+                            onClick = {
+                                if (customCashierName.isNotBlank()) {
+                                    viewModel.setActiveCashierName(customCashierName.trim())
+                                    showCashierSelectorDialog = false
+                                }
+                            },
+                            enabled = customCashierName.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.testTag("apply_custom_cashier_button")
+                        ) {
+                            Text("Set", fontSize = 12.sp)
                         }
                     }
                 }
@@ -476,6 +603,40 @@ fun SalesPosScreen(
                         }
                     }
 
+                    // Active Cashier Row with Switch action
+                    Surface(
+                        color = Slate100,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(Icons.Default.Badge, contentDescription = null, tint = Navy700, modifier = Modifier.size(16.dp))
+                                Text(
+                                    text = "Cashier: $activeCashierName",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Navy900
+                                )
+                            }
+                            TextButton(
+                                onClick = { showCashierSelectorDialog = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("Switch", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Navy900)
+                            }
+                        }
+                    }
+
                     // Payment Method Filter
                     Text("Payment Method:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy800)
                     Row(
@@ -673,7 +834,11 @@ fun SalesPosScreen(
                                 size = 34.dp
                             )
 
-                            Column(modifier = Modifier.weight(1f, fill = false)) {
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f, fill = false)
+                                    .clickable { showCashierSelectorDialog = true }
+                            ) {
                                 Text(
                                     text = storeDisplayName,
                                     color = Color.White,
@@ -682,13 +847,17 @@ fun SalesPosScreen(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                Text(
-                                    text = "$branchDisplayName • Cashier: ${activeUser?.username ?: "Admin"}",
-                                    color = Slate300,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(
+                                        text = "$branchDisplayName • Cashier: $activeCashierName",
+                                        color = Gold400,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Icon(Icons.Default.ArrowDropDown, contentDescription = "Switch Cashier", tint = Gold400, modifier = Modifier.size(14.dp))
+                                }
                             }
                         }
 

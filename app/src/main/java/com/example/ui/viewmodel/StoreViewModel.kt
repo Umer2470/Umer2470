@@ -199,6 +199,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeUser = MutableStateFlow<User?>(null)
     val activeUser: StateFlow<User?> = _activeUser.asStateFlow()
 
+    private val prefs = application.getSharedPreferences("pos_app_preferences", Context.MODE_PRIVATE)
+
+    private val _activeCashierName = MutableStateFlow(
+        prefs.getString("active_cashier_name", null) ?: "Muhammad Umer"
+    )
+    val activeCashierName: StateFlow<String> = _activeCashierName.asStateFlow()
+
     private val _heldCarts = MutableStateFlow<List<HeldCart>>(emptyList())
     val heldCarts: StateFlow<List<HeldCart>> = _heldCarts.asStateFlow()
 
@@ -214,6 +221,14 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val user = userDao.getUserByUsername("admin")
             if (user != null) {
                 _activeUser.value = user
+            }
+            val savedCashier = prefs.getString("active_cashier_name", null)
+            if (!savedCashier.isNullOrBlank()) {
+                _activeCashierName.value = savedCashier
+            } else {
+                val defaultName = user?.fullName?.ifBlank { null } ?: "Muhammad Umer"
+                _activeCashierName.value = defaultName
+                prefs.edit().putString("active_cashier_name", defaultName).apply()
             }
         }
     }
@@ -334,7 +349,9 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 paidAmount = paid,
                 dueAmount = due,
                 paymentType = _paymentType.value,
-                cashierName = _activeUser.value?.fullName ?: "Cashier",
+                cashierName = _activeCashierName.value.ifBlank {
+                    _activeUser.value?.fullName?.ifBlank { _activeUser.value?.username } ?: "Muhammad Umer"
+                },
                 branchId = 1,
                 createdAt = System.currentTimeMillis()
             )
@@ -588,8 +605,6 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private val prefs = application.getSharedPreferences("pos_app_preferences", Context.MODE_PRIVATE)
-
     private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "System") ?: "System")
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
@@ -614,7 +629,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     action = if (enabled) "Biometrics Enabled" else "Biometrics Disabled",
                     module = "Security",
                     details = "Biometric authentication (fingerprint / face unlock) was ${if (enabled) "enabled" else "disabled"}",
-                    performedBy = _activeUser.value?.fullName ?: "Admin"
+                    performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
                 )
             )
         }
@@ -642,6 +657,82 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setActiveUser(user: User) {
         _activeUser.value = user
+        if (user.fullName.isNotBlank()) {
+            setActiveCashierName(user.fullName, user)
+        } else if (user.username.isNotBlank()) {
+            setActiveCashierName(user.username, user)
+        }
+    }
+
+    fun setActiveCashierName(name: String, user: User? = null) {
+        val trimmed = name.trim().ifBlank { "Muhammad Umer" }
+        _activeCashierName.value = trimmed
+        prefs.edit().putString("active_cashier_name", trimmed).apply()
+        if (user != null) {
+            _activeUser.value = user
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Active Cashier Selected",
+                    module = "Cashier & Staff",
+                    details = "Active Cashier set to: $trimmed",
+                    performedBy = _activeUser.value?.fullName ?: trimmed
+                )
+            )
+        }
+    }
+
+    fun addOrUpdateCashier(
+        fullName: String,
+        username: String,
+        pin: String,
+        role: String = "CASHIER",
+        userId: Long = 0L,
+        setAsActive: Boolean = false,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val userToSave = User(
+                id = userId,
+                username = username.trim(),
+                passwordHash = "",
+                fullName = fullName.trim(),
+                role = role,
+                pin = pin.trim(),
+                branchId = 1,
+                isActive = true,
+                createdAt = if (userId == 0L) System.currentTimeMillis() else System.currentTimeMillis()
+            )
+            if (userId == 0L) {
+                val newId = userDao.insertUser(userToSave)
+                activityLogDao.insertLog(
+                    ActivityLog(
+                        action = "Cashier Created",
+                        module = "Cashier & Staff",
+                        details = "Added cashier: ${fullName.trim()} (@${username.trim()})",
+                        performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
+                    )
+                )
+                if (setAsActive) {
+                    setActiveCashierName(fullName.trim().ifBlank { username.trim() }, userToSave.copy(id = newId))
+                }
+            } else {
+                userDao.updateUser(userToSave)
+                activityLogDao.insertLog(
+                    ActivityLog(
+                        action = "Cashier Updated",
+                        module = "Cashier & Staff",
+                        details = "Updated cashier: ${fullName.trim()} (@${username.trim()})",
+                        performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
+                    )
+                )
+                if (setAsActive || _activeCashierName.value == username || _activeCashierName.value == fullName) {
+                    setActiveCashierName(fullName.trim().ifBlank { username.trim() }, userToSave)
+                }
+            }
+            launch(Dispatchers.Main) { onSuccess() }
+        }
     }
 
     fun saveUser(user: User, onSuccess: () -> Unit = {}) {
@@ -653,7 +744,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         action = "User Created",
                         module = "Users",
                         details = "Created user: ${user.username} (${user.role})",
-                        performedBy = _activeUser.value?.fullName ?: "Admin"
+                        performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
                     )
                 )
             } else {
@@ -663,7 +754,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         action = "User Updated",
                         module = "Users",
                         details = "Updated user: ${user.username} (${user.role})",
-                        performedBy = _activeUser.value?.fullName ?: "Admin"
+                        performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
                     )
                 )
             }
@@ -681,9 +772,14 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         action = "User Deleted",
                         module = "Users",
                         details = "Removed user: ${user.username}",
-                        performedBy = _activeUser.value?.fullName ?: "Admin"
+                        performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
                     )
                 )
+                if (_activeCashierName.value == user.fullName || _activeCashierName.value == user.username) {
+                    val remaining = userDao.getAllUsers().firstOrNull()
+                    val nextName = remaining?.fullName?.ifBlank { remaining.username } ?: "Muhammad Umer"
+                    setActiveCashierName(nextName, remaining)
+                }
             }
         }
     }
