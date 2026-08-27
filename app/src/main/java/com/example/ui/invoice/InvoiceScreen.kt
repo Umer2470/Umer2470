@@ -1,5 +1,6 @@
 package com.example.ui.invoice
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,16 +14,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
+import com.example.data.entity.StoreSettings
 import com.example.ui.components.AppHeader
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
+import com.example.util.PdfGenerator
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -40,6 +44,7 @@ fun InvoiceScreen(
     viewModel: StoreViewModel,
     onNavigateBack: () -> Unit
 ) {
+    val context = LocalContext.current
     val sales by viewModel.sales.collectAsState()
     val storeSettings by viewModel.storeSettings.collectAsState()
     val currency = storeSettings?.currencySymbol ?: "Rs"
@@ -67,7 +72,8 @@ fun InvoiceScreen(
         sales.filter { sale ->
             val matchesSearch = if (searchQuery.isBlank()) true else {
                 sale.invoiceNumber.contains(searchQuery, ignoreCase = true) ||
-                sale.customerName.contains(searchQuery, ignoreCase = true)
+                sale.customerName.contains(searchQuery, ignoreCase = true) ||
+                sale.cashierName.contains(searchQuery, ignoreCase = true)
             }
             val matchesFilter = when (selectedFilter) {
                 InvoiceFilter.ALL -> true
@@ -84,7 +90,7 @@ fun InvoiceScreen(
         topBar = {
             AppHeader(
                 title = "Invoices & Receipts",
-                subtitle = "${sales.size} Total Invoices • Full Audit Trail",
+                subtitle = "${sales.size} Total Invoices • PDF Export & Digital Records",
                 onBackClick = onNavigateBack
             )
         },
@@ -96,57 +102,111 @@ fun InvoiceScreen(
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
-            // Metrics Summary
+            // Metrics Summary with PDF Batch Export
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(containerColor = Navy900)
             ) {
-                Row(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(14.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Gross Sales", fontSize = 11.sp, color = Slate300)
-                        Text(
-                            "$currency %.0f".format(totalRevenue),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Gross Sales", fontSize = 11.sp, color = Slate300)
+                            Text(
+                                "$currency %.0f".format(totalRevenue),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                        VerticalDivider(
+                            modifier = Modifier
+                                .height(30.dp)
+                                .padding(horizontal = 8.dp),
+                            color = Navy700
                         )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Collected", fontSize = 11.sp, color = Slate300)
+                            Text(
+                                "$currency %.0f".format(totalCollected),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Emerald400
+                            )
+                        }
+                        VerticalDivider(
+                            modifier = Modifier
+                                .height(30.dp)
+                                .padding(horizontal = 8.dp),
+                            color = Navy700
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Pending Due", fontSize = 11.sp, color = Slate300)
+                            Text(
+                                "$currency %.0f".format(totalDue),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Rose400
+                            )
+                        }
                     }
-                    VerticalDivider(
-                        modifier = Modifier
-                            .height(30.dp)
-                            .padding(horizontal = 8.dp),
-                        color = Navy700
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Collected", fontSize = 11.sp, color = Slate300)
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(color = Navy800)
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
                         Text(
-                            "$currency %.0f".format(totalCollected),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Emerald400
+                            text = "Digital PDF Audit Archives",
+                            fontSize = 11.sp,
+                            color = Gold400,
+                            fontWeight = FontWeight.Medium
                         )
-                    }
-                    VerticalDivider(
-                        modifier = Modifier
-                            .height(30.dp)
-                            .padding(horizontal = 8.dp),
-                        color = Navy700
-                    )
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Pending Due", fontSize = 11.sp, color = Slate300)
-                        Text(
-                            "$currency %.0f".format(totalDue),
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Rose400
-                        )
+
+                        FilledTonalButton(
+                            onClick = {
+                                if (filteredSales.isEmpty()) {
+                                    Toast.makeText(context, "No invoices to export", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val auditPdf = PdfGenerator.generateBatchInvoicesSummaryPdf(
+                                        context,
+                                        filteredSales,
+                                        storeSettings ?: StoreSettings()
+                                    )
+                                    if (auditPdf != null) {
+                                        Toast.makeText(context, "Audit Report PDF Saved: ${auditPdf.name}", Toast.LENGTH_LONG).show()
+                                        PdfGenerator.sharePdfFile(context, auditPdf, "Share Invoices Audit Summary PDF")
+                                    } else {
+                                        Toast.makeText(context, "Failed to generate PDF", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            },
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = Gold500,
+                                contentColor = Navy900
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .height(32.dp)
+                                .testTag("export_audit_pdf_button")
+                        ) {
+                            Icon(Icons.Default.PictureAsPdf, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Export Audit PDF", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -276,41 +336,86 @@ fun InvoiceScreen(
                                         color = Navy800
                                     )
                                     Text(
-                                        text = "$formattedDate • Pay: ${sale.paymentType}",
+                                        text = "$formattedDate • Pay: ${sale.paymentType} • Cashier: ${sale.cashierName.ifBlank { "Muhammad Umer" }}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Navy600
                                     )
                                 }
 
-                                Column(horizontalAlignment = Alignment.End) {
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     Text(
                                         text = "$currency %.2f".format(sale.netAmount),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Black,
                                         color = Navy900
                                     )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Surface(
-                                        color = Navy100,
-                                        shape = RoundedCornerShape(6.dp)
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                                            verticalAlignment = Alignment.CenterVertically
+                                        // Quick Share PDF
+                                        FilledIconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    val (s, items) = viewModel.getSaleDetails(sale.id)
+                                                    if (s != null) {
+                                                        val pdfFile = PdfGenerator.generatePrintablePdfInvoice(
+                                                            context,
+                                                            s,
+                                                            items,
+                                                            storeSettings ?: StoreSettings(),
+                                                            PdfGenerator.ReceiptFormat.A4
+                                                        )
+                                                        if (pdfFile != null) {
+                                                            PdfGenerator.sharePdfFile(context, pdfFile, "Share ${s.invoiceNumber} PDF")
+                                                        } else {
+                                                            Toast.makeText(context, "Error creating PDF", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    }
+                                                }
+                                            },
+                                            colors = IconButtonDefaults.filledIconButtonColors(
+                                                containerColor = Navy900,
+                                                contentColor = Color.White
+                                            ),
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .testTag("quick_pdf_share_${sale.id}")
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.ReceiptLong,
-                                                contentDescription = "View",
-                                                tint = Navy900,
-                                                modifier = Modifier.size(14.dp)
+                                                imageVector = Icons.Default.Share,
+                                                contentDescription = "Share PDF",
+                                                modifier = Modifier.size(16.dp)
                                             )
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text(
-                                                text = "Receipt",
-                                                fontSize = 11.sp,
-                                                color = Navy900,
-                                                fontWeight = FontWeight.Bold
-                                            )
+                                        }
+
+                                        // Receipt Dialog Button
+                                        Surface(
+                                            color = Navy100,
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.ReceiptLong,
+                                                    contentDescription = "View",
+                                                    tint = Navy900,
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "Receipt",
+                                                    fontSize = 11.sp,
+                                                    color = Navy900,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
                                         }
                                     }
                                 }

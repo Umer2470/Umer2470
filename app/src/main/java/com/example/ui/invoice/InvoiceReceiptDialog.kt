@@ -1,7 +1,7 @@
 package com.example.ui.invoice
 
 import android.content.Context
-import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -10,12 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PictureAsPdf
-import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.QrCode
-import androidx.compose.material.icons.filled.Receipt
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,14 +18,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.core.content.FileProvider
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
 import com.example.data.entity.StoreSettings
@@ -39,6 +32,7 @@ import com.example.util.InvoiceFormattingService
 import com.example.util.PdfGenerator
 import com.example.util.PrintableInvoice
 import com.example.util.QrCodeRenderer
+import java.io.File
 
 enum class InvoiceViewFormat {
     THERMAL_RECEIPT,
@@ -60,6 +54,8 @@ fun InvoiceReceiptDialog(
 
     var selectedFormat by remember { mutableStateOf(InvoiceViewFormat.THERMAL_RECEIPT) }
     var showQrVerification by remember { mutableStateOf(false) }
+    var lastExportedFile by remember { mutableStateOf<File?>(null) }
+    var exportSuccessMessage by remember { mutableStateOf<String?>(null) }
 
     if (showQrVerification) {
         InvoiceQrVerificationDialog(
@@ -75,7 +71,7 @@ fun InvoiceReceiptDialog(
         Surface(
             modifier = Modifier
                 .fillMaxWidth(0.95f)
-                .fillMaxHeight(0.94f)
+                .fillMaxHeight(0.95f)
                 .testTag("invoice_receipt_dialog"),
             shape = RoundedCornerShape(16.dp),
             color = Slate50
@@ -107,6 +103,27 @@ fun InvoiceReceiptDialog(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = {
+                                val pdfFormat = if (selectedFormat == InvoiceViewFormat.THERMAL_RECEIPT) {
+                                    PdfGenerator.ReceiptFormat.THERMAL_80MM
+                                } else {
+                                    PdfGenerator.ReceiptFormat.A4
+                                }
+                                val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice, pdfFormat)
+                                if (pdfFile != null) {
+                                    PdfGenerator.printPdfFile(context, pdfFile, "Print_${printableInvoice.meta.invoiceNumber}")
+                                }
+                            },
+                            modifier = Modifier.testTag("receipt_print_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Print,
+                                contentDescription = "Print",
+                                tint = Color.White
+                            )
+                        }
+
                         IconButton(
                             onClick = onDismiss,
                             modifier = Modifier.testTag("close_receipt_button")
@@ -159,6 +176,43 @@ fun InvoiceReceiptDialog(
                                 iconColor = Color.White
                             )
                         )
+                    }
+                }
+
+                // Export Success Banner if triggered
+                exportSuccessMessage?.let { msg ->
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        color = Emerald50,
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Emerald200)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(msg, fontSize = 12.sp, color = Emerald800, fontWeight = FontWeight.Medium)
+                            }
+                            if (lastExportedFile != null) {
+                                TextButton(
+                                    onClick = { PdfGenerator.openPdfFile(context, lastExportedFile!!) },
+                                    colors = ButtonDefaults.textButtonColors(contentColor = Emerald700)
+                                ) {
+                                    Text("OPEN", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -288,19 +342,21 @@ fun InvoiceReceiptDialog(
 
                                 // QR Code
                                 val qrImage = remember(printableInvoice.qrPayload) {
-                                    QrCodeRenderer.generateQrImageBitmap(printableInvoice.qrPayload, 160, 160)
+                                    QrCodeRenderer.generateQrImageBitmap(printableInvoice.qrPayload, 512, 512)
                                 }
                                 if (qrImage != null) {
                                     Image(
                                         bitmap = qrImage,
                                         contentDescription = "Invoice QR Verification",
-                                        modifier = Modifier.size(110.dp)
+                                        filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+                                        modifier = Modifier.size(120.dp)
                                     )
-                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Spacer(modifier = Modifier.height(3.dp))
                                     Text(
                                         text = "Scan QR to verify invoice authenticity",
-                                        fontSize = 10.sp,
-                                        color = Navy600
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Navy700
                                     )
                                 }
 
@@ -498,52 +554,85 @@ fun InvoiceReceiptDialog(
                     color = Color.White,
                     tonalElevation = 4.dp
                 ) {
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        OutlinedButton(
-                            onClick = { showQrVerification = true },
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(46.dp)
-                                .testTag("verify_qr_button"),
-                            shape = RoundedCornerShape(8.dp)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("QR Code")
-                        }
+                            // QR Verification Action
+                            OutlinedButton(
+                                onClick = { showQrVerification = true },
+                                modifier = Modifier
+                                    .weight(0.9f)
+                                    .height(44.dp)
+                                    .testTag("verify_qr_button"),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("QR", fontSize = 12.sp)
+                            }
 
-                        Button(
-                            onClick = {
-                                val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice)
-                                if (pdfFile != null) {
-                                    val uri = FileProvider.getUriForFile(
-                                        context,
-                                        "${context.packageName}.fileprovider",
-                                        pdfFile
-                                    )
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "application/pdf"
-                                        putExtra(Intent.EXTRA_STREAM, uri)
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            // Save / Export PDF to Device Action
+                            OutlinedButton(
+                                onClick = {
+                                    val pdfFormat = if (selectedFormat == InvoiceViewFormat.THERMAL_RECEIPT) {
+                                        PdfGenerator.ReceiptFormat.THERMAL_80MM
+                                    } else {
+                                        PdfGenerator.ReceiptFormat.A4
                                     }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Share Invoice PDF"))
-                                }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                            modifier = Modifier
-                                .weight(1.3f)
-                                .height(46.dp)
-                                .testTag("share_pdf_button"),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Export / Share PDF")
+                                    val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice, pdfFormat)
+                                    if (pdfFile != null) {
+                                        lastExportedFile = pdfFile
+                                        exportSuccessMessage = "Exported ${pdfFile.name} to Documents"
+                                        Toast.makeText(context, "Exported PDF to: ${pdfFile.absolutePath}", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(context, "Failed to generate PDF", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .weight(1.1f)
+                                    .height(44.dp)
+                                    .testTag("save_pdf_button"),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Save PDF", fontSize = 12.sp)
+                            }
+
+                            // Share PDF Button
+                            Button(
+                                onClick = {
+                                    val pdfFormat = if (selectedFormat == InvoiceViewFormat.THERMAL_RECEIPT) {
+                                        PdfGenerator.ReceiptFormat.THERMAL_80MM
+                                    } else {
+                                        PdfGenerator.ReceiptFormat.A4
+                                    }
+                                    val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice, pdfFormat)
+                                    if (pdfFile != null) {
+                                        lastExportedFile = pdfFile
+                                        PdfGenerator.sharePdfFile(context, pdfFile, "Share Invoice ${printableInvoice.meta.invoiceNumber}")
+                                    } else {
+                                        Toast.makeText(context, "Failed to export PDF", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                modifier = Modifier
+                                    .weight(1.3f)
+                                    .height(44.dp)
+                                    .testTag("share_pdf_button"),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Share PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

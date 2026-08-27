@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
@@ -22,6 +23,13 @@ import com.example.ui.components.SectionHeader
 import com.example.ui.invoice.InvoiceReceiptDialog
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
+
+data class CashierPerformanceStat(
+    val cashierName: String,
+    val invoiceCount: Int,
+    val netTotal: Double,
+    val collectedTotal: Double
+)
 
 @Composable
 fun ReportsScreen(
@@ -40,6 +48,18 @@ fun ReportsScreen(
     val totalDiscounts = remember(sales) { sales.sumOf { it.discount } }
     val totalCustomerDue = remember(customers) { customers.sumOf { it.balance } }
     val estimatedProfit = remember(totalRevenue, totalPurchases) { (totalRevenue - totalPurchases).coerceAtLeast(0.0) }
+
+    val cashierBreakdown = remember(sales) {
+        val grouped = sales.groupBy { it.cashierName.ifBlank { "Muhammad Umer" } }
+        grouped.map { (name, saleList) ->
+            CashierPerformanceStat(
+                cashierName = name,
+                invoiceCount = saleList.size,
+                netTotal = saleList.sumOf { it.netAmount },
+                collectedTotal = saleList.sumOf { it.paidAmount }
+            )
+        }.sortedByDescending { it.netTotal }
+    }
 
     Scaffold(
         topBar = {
@@ -104,6 +124,75 @@ fun ReportsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
+            SectionHeader(title = "Cashier Performance Breakdown", subtitle = "Sales volume & invoice count per cashier")
+
+            if (cashierBreakdown.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Box(modifier = Modifier.padding(16.dp)) {
+                        Text("No sales records available yet.", color = Slate400, fontSize = 12.sp)
+                    }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        cashierBreakdown.forEachIndexed { index, stat ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = Navy100
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Person,
+                                            contentDescription = null,
+                                            tint = Navy800,
+                                            modifier = Modifier.padding(6.dp).size(16.dp)
+                                        )
+                                    }
+                                    Column {
+                                        Text(stat.cashierName, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
+                                        Text("${stat.invoiceCount} Invoices • Collected: $currency %.0f".format(stat.collectedTotal), fontSize = 11.sp, color = Slate500)
+                                    }
+                                }
+
+                                Text(
+                                    text = "$currency %.2f".format(stat.netTotal),
+                                    fontWeight = FontWeight.Black,
+                                    fontSize = 14.sp,
+                                    color = Emerald700
+                                )
+                            }
+                            if (index < cashierBreakdown.size - 1) {
+                                HorizontalDivider(color = Slate100)
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
             SectionHeader(title = "Tax & Discount Metrics", subtitle = "Breakdown of margins")
 
             Card(
@@ -125,7 +214,7 @@ fun ReportsScreen(
                         Text("Total Sales Completed:", color = Navy600, fontSize = 13.sp)
                         Text("${sales.size} Invoices", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 13.sp)
                     }
-                    Divider()
+                    HorizontalDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
@@ -133,7 +222,7 @@ fun ReportsScreen(
                         Text("Total Discounts Awarded:", color = Navy600, fontSize = 13.sp)
                         Text("$currency %.2f".format(totalDiscounts), fontWeight = FontWeight.Bold, color = Rose600, fontSize = 13.sp)
                     }
-                    Divider()
+                    HorizontalDivider()
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween

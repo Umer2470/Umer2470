@@ -2,6 +2,7 @@ package com.example.ui.invoice
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -32,7 +34,7 @@ fun InvoiceQrVerificationDialog(
     onDismiss: () -> Unit
 ) {
     val qrImage = remember(invoice.qrPayload) {
-        QrCodeRenderer.generateQrImageBitmap(invoice.qrPayload, 260, 260)
+        QrCodeRenderer.generateQrImageBitmap(invoice.qrPayload, 512, 512)
     }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -78,13 +80,16 @@ fun InvoiceQrVerificationDialog(
 
                 Card(
                     shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Slate100),
-                    modifier = Modifier.padding(8.dp)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .border(1.dp, Slate200, RoundedCornerShape(12.dp))
                 ) {
                     if (qrImage != null) {
                         Image(
                             bitmap = qrImage,
                             contentDescription = "QR Code",
+                            filterQuality = FilterQuality.High,
                             modifier = Modifier
                                 .padding(16.dp)
                                 .size(200.dp)
@@ -102,9 +107,9 @@ fun InvoiceQrVerificationDialog(
                 )
                 Text(
                     text = "Amount: ${invoice.totals.currencySymbol} %.2f".format(invoice.totals.netAmount),
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    color = Emerald600
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Emerald700
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -114,81 +119,7 @@ fun InvoiceQrVerificationDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Done")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ScannedInvoiceVerificationDialog(
-    scannedData: String,
-    onDismiss: () -> Unit
-) {
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth(0.95f)
-                .testTag("scanned_invoice_dialog"),
-            shape = RoundedCornerShape(16.dp),
-            color = Color.White
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            tint = Emerald600,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Scanned QR Data",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Navy900
-                        )
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(imageVector = Icons.Default.Close, contentDescription = "Close")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Slate100),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text(
-                        text = scannedData,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = Navy800,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Button(
-                    onClick = onDismiss,
-                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Close")
+                    Text("Done", fontWeight = FontWeight.Bold)
                 }
             }
         }

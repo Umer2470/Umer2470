@@ -32,7 +32,6 @@ import com.example.data.entity.Customer
 import com.example.data.entity.Product
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
-import com.example.ui.components.BarCodeScannerDialog
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.components.StatusBadge
 import com.example.ui.invoice.InvoiceReceiptDialog
@@ -72,7 +71,6 @@ fun SalesPosScreen(
     var selectedCategory by remember { mutableStateOf("All") }
     var currentTab by remember { mutableStateOf(PosTab.CART) }
 
-    var showScannerDialog by remember { mutableStateOf(false) }
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var showReceiptDialog by remember { mutableStateOf(false) }
     var showCustomerDialog by remember { mutableStateOf(false) }
@@ -118,23 +116,6 @@ fun SalesPosScreen(
                     p.category.contains(searchQuery, ignoreCase = true)
             matchesCategory && matchesQuery
         }
-    }
-
-    // Barcode Scanner Dialog
-    if (showScannerDialog) {
-        BarCodeScannerDialog(
-            onBarcodeScanned = { barcode ->
-                val matched = products.find { it.barcode.equals(barcode.trim(), ignoreCase = true) }
-                if (matched != null) {
-                    viewModel.addToCart(matched)
-                    successToast = "Added '${matched.name}' to cart"
-                    currentTab = PosTab.CART
-                } else {
-                    errorMessage = "No product registered with barcode: $barcode"
-                }
-            },
-            onDismiss = { showScannerDialog = false }
-        )
     }
 
     // Receipt Dialog
@@ -267,6 +248,18 @@ fun SalesPosScreen(
     // Cashier Selector Dialog
     if (showCashierSelectorDialog) {
         var customCashierName by remember { mutableStateOf("") }
+        var cashierSearchQuery by remember { mutableStateOf("") }
+
+        val activeCashiers = remember(users, cashierSearchQuery) {
+            users.filter { it.isActive && (cashierSearchQuery.isBlank() ||
+                    it.fullName.contains(cashierSearchQuery, ignoreCase = true) ||
+                    it.username.contains(cashierSearchQuery, ignoreCase = true)) }
+        }
+        val inactiveCashiers = remember(users, cashierSearchQuery) {
+            users.filter { !it.isActive && (cashierSearchQuery.isBlank() ||
+                    it.fullName.contains(cashierSearchQuery, ignoreCase = true) ||
+                    it.username.contains(cashierSearchQuery, ignoreCase = true)) }
+        }
 
         AlertDialog(
             onDismissRequest = { showCashierSelectorDialog = false },
@@ -309,13 +302,25 @@ fun SalesPosScreen(
                         }
                     }
 
-                    Text("Available Staff & Cashiers:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy800)
+                    if (users.size > 3) {
+                        OutlinedTextField(
+                            value = cashierSearchQuery,
+                            onValueChange = { cashierSearchQuery = it },
+                            placeholder = { Text("Filter cashier list...", fontSize = 12.sp) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("pos_cashier_search_input")
+                        )
+                    }
+
+                    Text("Active Cashiers (${activeCashiers.size}):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy800)
 
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 220.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(users, key = { it.id }) { u ->
+                        items(activeCashiers, key = { it.id }) { u ->
                             val isSelected = activeCashierName.equals(u.fullName, ignoreCase = true) ||
                                     (u.fullName.isBlank() && activeCashierName.equals(u.username, ignoreCase = true))
                             Surface(
@@ -344,14 +349,41 @@ fun SalesPosScreen(
                                         Text("Role: ${u.role} • @${u.username}", fontSize = 11.sp, color = Navy600)
                                     }
                                     if (isSelected) {
-                                        StatusBadge(text = "ACTIVE", backgroundColor = Emerald100, textColor = Emerald700)
+                                        StatusBadge(text = "CURRENT", backgroundColor = Emerald100, textColor = Emerald700)
+                                    }
+                                }
+                            }
+                        }
+
+                        if (inactiveCashiers.isNotEmpty()) {
+                            item {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Inactive Staff (Disabled):", fontSize = 11.sp, color = Slate400, fontWeight = FontWeight.SemiBold)
+                            }
+                            items(inactiveCashiers, key = { "inactive_${it.id}" }) { inact ->
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Slate100,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(8.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = inact.fullName.ifBlank { inact.username },
+                                            fontSize = 12.sp,
+                                            color = Slate500
+                                        )
+                                        StatusBadge(text = "INACTIVE", backgroundColor = Rose100, textColor = Rose600)
                                     }
                                 }
                             }
                         }
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
                     Text("Or Enter Custom Cashier Name:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
                     Row(
@@ -890,20 +922,6 @@ fun SalesPosScreen(
                                     )
                                 }
                             }
-
-                            // Quick Scanner Button in Header
-                            FilledIconButton(
-                                onClick = { showScannerDialog = true },
-                                colors = IconButtonDefaults.filledIconButtonColors(
-                                    containerColor = Gold500,
-                                    contentColor = Navy900
-                                ),
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .testTag("pos_scanner_button")
-                            ) {
-                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", modifier = Modifier.size(20.dp))
-                            }
                         }
                     }
                 }
@@ -1248,19 +1266,9 @@ fun SalesPosScreen(
                         focusedContainerColor = Color.White
                     ),
                     modifier = Modifier
-                        .weight(1f)
+                        .fillMaxWidth()
                         .testTag("pos_search_input")
                 )
-
-                // 1-Tap Barcode Scanner Button
-                FilledIconButton(
-                    onClick = { showScannerDialog = true },
-                    shape = RoundedCornerShape(10.dp),
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = Navy900, contentColor = Gold500),
-                    modifier = Modifier.size(50.dp).testTag("pos_barcode_scan_action")
-                ) {
-                    Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode")
-                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -1393,30 +1401,20 @@ fun SalesPosScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Scan a barcode or browse the product catalog to add items.",
+                                    text = "Search by name, category or barcode to add items to bill.",
                                     textAlign = TextAlign.Center,
                                     fontSize = 12.sp,
                                     color = Navy500
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Button(
-                                        onClick = { currentTab = PosTab.CATALOG },
-                                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Browse Catalog")
-                                    }
-                                    OutlinedButton(
-                                        onClick = { showScannerDialog = true },
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Icon(Icons.Default.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("Scan")
-                                    }
+                                Button(
+                                    onClick = { currentTab = PosTab.CATALOG },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Browse Catalog")
                                 }
                             }
                         }

@@ -1,6 +1,6 @@
 package com.example.ui.components
 
-import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -19,17 +19,19 @@ import com.example.ui.theme.*
 fun StatusBadge(
     text: String,
     backgroundColor: Color = Emerald100,
-    textColor: Color = Emerald600
+    textColor: Color = Emerald700,
+    borderColor: Color = textColor.copy(alpha = 0.25f)
 ) {
     Surface(
         color = backgroundColor,
-        shape = RoundedCornerShape(12.dp)
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.border(1.dp, borderColor, RoundedCornerShape(8.dp))
     ) {
         Text(
             text = text,
             color = textColor,
             fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
         )
     }
@@ -48,7 +50,7 @@ fun SectionHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
+        Column(modifier = Modifier.weight(1f, fill = false)) {
             Text(
                 text = title,
                 style = MaterialTheme.typography.titleMedium,
@@ -59,7 +61,7 @@ fun SectionHeader(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Navy500
+                    color = Navy600
                 )
             }
         }
@@ -78,10 +80,10 @@ fun MetricTile(
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier.border(1.dp, Slate200, RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier
@@ -91,11 +93,16 @@ fun MetricTile(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column {
-                Text(text = title, style = MaterialTheme.typography.bodySmall, color = Navy500)
+                Text(text = title, style = MaterialTheme.typography.bodySmall, color = Navy600, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(text = value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = color)
             }
-            Icon(imageVector = icon, contentDescription = title, tint = color, modifier = Modifier.size(32.dp))
+            Surface(
+                color = color.copy(alpha = 0.1f),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(imageVector = icon, contentDescription = title, tint = color, modifier = Modifier.padding(6.dp).size(28.dp))
+            }
         }
     }
 }

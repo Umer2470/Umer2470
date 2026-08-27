@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.Dp
@@ -32,7 +34,14 @@ fun ShopLogoAvatar(
         if (!logoUri.isNullOrBlank()) {
             try {
                 val f = File(logoUri)
-                if (f.exists()) BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap() else null
+                if (f.exists()) {
+                    val opts = BitmapFactory.Options().apply {
+                        inPreferredConfig = Bitmap.Config.ARGB_8888
+                        inScaled = false
+                        inDither = true
+                    }
+                    BitmapFactory.decodeFile(f.absolutePath, opts)?.asImageBitmap()
+                } else null
             } catch (e: Exception) {
                 null
             }
@@ -44,6 +53,7 @@ fun ShopLogoAvatar(
             bitmap = bitmap,
             contentDescription = "Shop Logo",
             contentScale = ContentScale.Crop,
+            filterQuality = FilterQuality.High,
             modifier = modifier
                 .size(size)
                 .clip(CircleShape)
@@ -55,7 +65,7 @@ fun ShopLogoAvatar(
                 .size(size)
                 .clip(CircleShape)
                 .background(MaterialTheme.colorScheme.primaryContainer)
-                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), CircleShape),
+                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
             Icon(

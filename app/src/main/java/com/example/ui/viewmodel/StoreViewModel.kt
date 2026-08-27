@@ -683,12 +683,43 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleUserStatus(user: User, onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val newStatus = !user.isActive
+            val updatedUser = user.copy(isActive = newStatus)
+            userDao.updateUser(updatedUser)
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = if (newStatus) "Cashier Activated" else "Cashier Deactivated",
+                    module = "Cashier & Staff",
+                    details = "Status changed for '${user.fullName.ifBlank { user.username }}' to ${if (newStatus) "Active" else "Inactive"}",
+                    performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
+                )
+            )
+
+            // If deactivated cashier was currently active, switch to next available active user
+            if (!newStatus) {
+                val currentActive = _activeCashierName.value
+                val isMatch = currentActive.equals(user.fullName, ignoreCase = true) ||
+                        currentActive.equals(user.username, ignoreCase = true)
+                if (isMatch) {
+                    val fallbackUser = users.value.firstOrNull { it.id != user.id && it.isActive }
+                    val fallbackName = fallbackUser?.fullName?.ifBlank { fallbackUser.username } ?: "Muhammad Umer"
+                    setActiveCashierName(fallbackName, fallbackUser)
+                }
+            }
+
+            launch(Dispatchers.Main) { onComplete() }
+        }
+    }
+
     fun addOrUpdateCashier(
         fullName: String,
         username: String,
         pin: String,
         role: String = "CASHIER",
         userId: Long = 0L,
+        isActive: Boolean = true,
         setAsActive: Boolean = false,
         onSuccess: () -> Unit = {}
     ) {
@@ -701,7 +732,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 fullName = fullName.trim(),
                 phone = "",
                 branchId = 1,
-                isActive = true,
+                isActive = isActive,
                 createdAt = System.currentTimeMillis()
             )
             if (userId == 0L) {
@@ -710,25 +741,36 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     ActivityLog(
                         action = "Cashier Created",
                         module = "Cashier & Staff",
-                        details = "Added cashier: ${fullName.trim()} (@${username.trim()})",
+                        details = "Added cashier: ${fullName.trim()} (@${username.trim()}) - Status: ${if (isActive) "Active" else "Inactive"}",
                         performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
                     )
                 )
-                if (setAsActive) {
+                if (setAsActive && isActive) {
                     setActiveCashierName(fullName.trim().ifBlank { username.trim() }, userToSave.copy(id = newId))
                 }
             } else {
+                val oldUser = userDao.getUserById(userId)
+                val wasActiveCashier = oldUser != null && (
+                        _activeCashierName.value.equals(oldUser.fullName, ignoreCase = true) ||
+                        _activeCashierName.value.equals(oldUser.username, ignoreCase = true)
+                )
+
                 userDao.updateUser(userToSave)
                 activityLogDao.insertLog(
                     ActivityLog(
                         action = "Cashier Updated",
                         module = "Cashier & Staff",
-                        details = "Updated cashier: ${fullName.trim()} (@${username.trim()})",
+                        details = "Updated cashier: ${fullName.trim()} (@${username.trim()}) - Status: ${if (isActive) "Active" else "Inactive"}",
                         performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
                     )
                 )
-                if (setAsActive || _activeCashierName.value == username || _activeCashierName.value == fullName) {
+
+                if (isActive && (setAsActive || wasActiveCashier)) {
                     setActiveCashierName(fullName.trim().ifBlank { username.trim() }, userToSave)
+                } else if (!isActive && wasActiveCashier) {
+                    val fallbackUser = users.value.firstOrNull { it.id != userId && it.isActive }
+                    val fallbackName = fallbackUser?.fullName?.ifBlank { fallbackUser.username } ?: "Muhammad Umer"
+                    setActiveCashierName(fallbackName, fallbackUser)
                 }
             }
             launch(Dispatchers.Main) { onSuccess() }
@@ -737,6 +779,12 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveUser(user: User, onSuccess: () -> Unit = {}) {
         viewModelScope.launch(Dispatchers.IO) {
+            val oldUser = if (user.id != 0L) userDao.getUserById(user.id) else null
+            val wasActiveCashier = oldUser != null && (
+                    _activeCashierName.value.equals(oldUser.fullName, ignoreCase = true) ||
+                    _activeCashierName.value.equals(oldUser.username, ignoreCase = true)
+            )
+
             if (user.id == 0L) {
                 userDao.insertUser(user)
                 activityLogDao.insertLog(
@@ -757,6 +805,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                         performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
                     )
                 )
+
+                if (user.isActive && wasActiveCashier) {
+                    val newName = user.fullName.ifBlank { user.username }
+                    setActiveCashierName(newName, user)
+                } else if (!user.isActive && wasActiveCashier) {
+                    val fallbackUser = users.value.firstOrNull { it.id != user.id && it.isActive }
+                    val fallbackName = fallbackUser?.fullName?.ifBlank { fallbackUser.username } ?: "Muhammad Umer"
+                    setActiveCashierName(fallbackName, fallbackUser)
+                }
             }
             launch(Dispatchers.Main) { onSuccess() }
         }

@@ -1,5 +1,6 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -10,8 +11,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.ui.theme.Navy500
+import com.example.ui.theme.Navy600
 import com.example.ui.theme.Navy900
+import com.example.ui.theme.Slate200
 
 @Composable
 fun KpiCard(
@@ -22,10 +24,10 @@ fun KpiCard(
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier.border(1.dp, Slate200, RoundedCornerShape(12.dp)),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Row(
             modifier = Modifier
@@ -34,11 +36,12 @@ fun KpiCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f, fill = false)) {
                 Text(
                     text = title,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Navy500
+                    fontWeight = FontWeight.Medium,
+                    color = Navy600
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(
@@ -49,7 +52,7 @@ fun KpiCard(
                 )
             }
             Surface(
-                color = color.copy(alpha = 0.1f),
+                color = color.copy(alpha = 0.12f),
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Icon(
