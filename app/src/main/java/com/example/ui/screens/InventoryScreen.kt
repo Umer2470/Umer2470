@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.entity.Product
 import com.example.ui.components.AppHeader
+import com.example.ui.components.BarCodeScannerDialog
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
@@ -35,6 +36,9 @@ fun InventoryScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showAddEditDialog by remember { mutableStateOf(false) }
     var editingProduct by remember { mutableStateOf<Product?>(null) }
+    var showScannerDialog by remember { mutableStateOf(false) }
+    var isScanningForNewProduct by remember { mutableStateOf(false) }
+    var scannedBarcodeForForm by remember { mutableStateOf<String?>(null) }
 
     val filteredProducts = remember(products, searchQuery) {
         if (searchQuery.isBlank()) products
@@ -47,6 +51,20 @@ fun InventoryScreen(
         }
     }
 
+    if (showScannerDialog) {
+        BarCodeScannerDialog(
+            onBarcodeScanned = { scanned ->
+                if (isScanningForNewProduct) {
+                    scannedBarcodeForForm = scanned
+                } else {
+                    searchQuery = scanned
+                }
+                showScannerDialog = false
+            },
+            onDismiss = { showScannerDialog = false }
+        )
+    }
+
     if (showAddEditDialog) {
         var name by remember { mutableStateOf(editingProduct?.name ?: "") }
         var category by remember { mutableStateOf(editingProduct?.category ?: "General") }
@@ -55,6 +73,13 @@ fun InventoryScreen(
         var salePrice by remember { mutableStateOf(editingProduct?.salePrice?.toString() ?: "") }
         var stockQuantity by remember { mutableStateOf(editingProduct?.stockQuantity?.toString() ?: "") }
         var unit by remember { mutableStateOf(editingProduct?.unit ?: "Pcs") }
+
+        LaunchedEffect(scannedBarcodeForForm) {
+            scannedBarcodeForForm?.let {
+                barcode = it
+                scannedBarcodeForForm = null
+            }
+        }
 
         AlertDialog(
             onDismissRequest = { showAddEditDialog = false },
@@ -77,6 +102,14 @@ fun InventoryScreen(
                         value = barcode,
                         onValueChange = { barcode = it },
                         label = { Text("Barcode / SKU") },
+                        trailingIcon = {
+                            IconButton(onClick = {
+                                isScanningForNewProduct = true
+                                showScannerDialog = true
+                            }) {
+                                Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = Navy900)
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth().testTag("product_barcode_input")
                     )
                     Row(
@@ -182,6 +215,14 @@ fun InventoryScreen(
                 onValueChange = { searchQuery = it },
                 placeholder = { Text("Search products by name, barcode, category...") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    IconButton(onClick = {
+                        isScanningForNewProduct = false
+                        showScannerDialog = true
+                    }) {
+                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = Navy900)
+                    }
+                },
                 singleLine = true,
                 shape = RoundedCornerShape(12.dp),
                 modifier = Modifier.fillMaxWidth(),

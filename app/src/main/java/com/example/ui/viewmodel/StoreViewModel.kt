@@ -696,13 +696,13 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val userToSave = User(
                 id = userId,
                 username = username.trim(),
-                passwordHash = "",
-                fullName = fullName.trim(),
+                pinHash = pin.trim(),
                 role = role,
-                pin = pin.trim(),
+                fullName = fullName.trim(),
+                phone = "",
                 branchId = 1,
                 isActive = true,
-                createdAt = if (userId == 0L) System.currentTimeMillis() else System.currentTimeMillis()
+                createdAt = System.currentTimeMillis()
             )
             if (userId == 0L) {
                 val newId = userDao.insertUser(userToSave)
@@ -776,7 +776,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 )
                 if (_activeCashierName.value == user.fullName || _activeCashierName.value == user.username) {
-                    val remaining = userDao.getAllUsers().firstOrNull()
+                    val remaining = users.value.firstOrNull { it.id != userId }
                     val nextName = remaining?.fullName?.ifBlank { remaining.username } ?: "Muhammad Umer"
                     setActiveCashierName(nextName, remaining)
                 }
