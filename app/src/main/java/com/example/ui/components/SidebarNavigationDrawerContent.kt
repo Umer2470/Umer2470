@@ -473,30 +473,23 @@ fun SidebarNavigationDrawerContent(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Surface(
-                        color = Gold500,
+                    ShopLogoAvatar(
+                        logoUri = storeSettings?.logoUri,
+                        size = 44.dp,
                         shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.size(42.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Storefront,
-                                contentDescription = null,
-                                tint = Navy900,
-                                modifier = Modifier.size(26.dp)
-                            )
-                        }
-                    }
+                        borderColor = Gold400,
+                        borderWidth = 1.5.dp
+                    )
                     Column {
                         Text(
-                            text = storeSettings?.storeName ?: "CH UMER POS",
+                            text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "CH UMER POS",
                             fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             color = Color.White
                         )
                         Text(
-                            text = "Tel: ${storeSettings?.phone ?: "03080018035"}",
-                            fontSize = 12.sp,
+                            text = storeSettings?.tagline?.ifBlank { "Tel: ${storeSettings?.phone ?: "03080018035"}" } ?: "SMART | FAST | RELIABLE",
+                            fontSize = 11.5.sp,
                             fontWeight = FontWeight.Medium,
                             color = Gold400
                         )

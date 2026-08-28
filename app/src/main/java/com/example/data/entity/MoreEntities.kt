@@ -10,6 +10,11 @@ data class StoreSettings(
     @PrimaryKey
     val id: Long = 1,
     val storeName: String = "CH UMER POS.03080018035",
+    val appDisplayName: String = "VIP POS",
+    val posBrandName: String = "VIP POS",
+    val tagline: String = "SMART | FAST | RELIABLE",
+    val brandDescription: String = "ALL-IN-ONE BUSINESS SOLUTION",
+    val logoUri: String? = null,
     val ownerName: String = "CH UMER",
     val phone: String = "03080018035",
     val email: String = "sentrystore.pk@gmail.com",

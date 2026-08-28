@@ -3,34 +3,38 @@ package com.example.ui.components
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Store
-import androidx.compose.material3.Icon
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.example.R
+import com.example.ui.theme.Gold500
 import java.io.File
 
 @Composable
 fun ShopLogoAvatar(
     logoUri: String?,
     size: Dp = 64.dp,
+    shape: Shape = CircleShape,
+    borderColor: Color = Gold500,
+    borderWidth: Dp = 1.5.dp,
     modifier: Modifier = Modifier
 ) {
-    val bitmap = remember(logoUri) {
+    val customBitmap = remember(logoUri) {
         if (!logoUri.isNullOrBlank()) {
             try {
                 val f = File(logoUri)
@@ -48,32 +52,30 @@ fun ShopLogoAvatar(
         } else null
     }
 
-    if (bitmap != null) {
+    if (customBitmap != null) {
         Image(
-            bitmap = bitmap,
-            contentDescription = "Shop Logo",
+            bitmap = customBitmap,
+            contentDescription = "Custom Brand Logo",
             contentScale = ContentScale.Crop,
             filterQuality = FilterQuality.High,
             modifier = modifier
                 .size(size)
-                .clip(CircleShape)
-                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                .clip(shape)
+                .border(borderWidth, borderColor, shape)
+                .testTag("custom_shop_logo_avatar")
         )
     } else {
-        Box(
+        Image(
+            painter = painterResource(id = R.drawable.img_vip_pos_logo),
+            contentDescription = "Brand Logo",
+            contentScale = ContentScale.Crop,
             modifier = modifier
                 .size(size)
-                .clip(CircleShape)
-                .background(MaterialTheme.colorScheme.primaryContainer)
-                .border(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), CircleShape),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.Store,
-                contentDescription = "Shop Logo",
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(size * 0.55f)
-            )
-        }
+                .clip(shape)
+                .border(borderWidth, borderColor, shape)
+                .testTag("default_shop_logo_avatar")
+        )
     }
 }
+
+

@@ -32,6 +32,7 @@ import com.example.data.entity.Customer
 import com.example.data.entity.Product
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
+import com.example.ui.components.LiveClockHeaderWidget
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.components.StatusBadge
 import com.example.ui.invoice.InvoiceReceiptDialog
@@ -43,6 +44,11 @@ import com.example.ui.viewmodel.StoreViewModel
 enum class PosTab {
     CART,
     CATALOG
+}
+
+enum class PosViewMode {
+    GRID,
+    LIST
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,14 +76,19 @@ fun SalesPosScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf("All") }
     var currentTab by remember { mutableStateOf(PosTab.CART) }
+    var viewMode by remember { mutableStateOf(PosViewMode.GRID) }
 
+    // Dialog state controllers
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var showReceiptDialog by remember { mutableStateOf(false) }
     var showCustomerDialog by remember { mutableStateOf(false) }
+    var showQuickAddCustomerDialog by remember { mutableStateOf(false) }
     var showDiscountDialog by remember { mutableStateOf(false) }
     var showHeldCartsDialog by remember { mutableStateOf(false) }
     var showClearConfirmDialog by remember { mutableStateOf(false) }
     var showCashierSelectorDialog by remember { mutableStateOf(false) }
+    var showCustomItemDialog by remember { mutableStateOf(false) }
+    var editingCartItem by remember { mutableStateOf<CartItem?>(null) }
 
     var lastSale by remember { mutableStateOf<Sale?>(null) }
     var lastSaleItems by remember { mutableStateOf<List<SaleItem>>(emptyList()) }
@@ -86,9 +97,12 @@ fun SalesPosScreen(
 
     val currency = storeSettings?.currencySymbol ?: "Rs"
     val storeDisplayName = storeSettings?.storeName?.ifBlank { null }
+        ?: storeSettings?.posBrandName?.ifBlank { null }
         ?: businessProfile?.businessName?.ifBlank { null }
-        ?: "CH UMER POS"
-    val branchDisplayName = branches.firstOrNull()?.name ?: "Main Outlet"
+        ?: "SENTRY STORE POS"
+    val storeTagline = storeSettings?.tagline?.ifBlank { null }
+        ?: "Professional Business & Retail Management System"
+    val branchDisplayName = branches.firstOrNull()?.name ?: "Main Branch"
 
     // Calculations
     val subtotal = remember(cart) { cart.sumOf { it.totalPrice } }
@@ -147,7 +161,10 @@ fun SalesPosScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Select Customer", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+                    Column {
+                        Text("Select Customer", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+                        Text("Assign client to current invoice", fontSize = 11.sp, color = Navy500)
+                    }
                     IconButton(onClick = { showCustomerDialog = false }, modifier = Modifier.size(24.dp)) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Navy500)
                     }
@@ -157,18 +174,33 @@ fun SalesPosScreen(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 380.dp),
+                        .heightIn(max = 420.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = custSearch,
-                        onValueChange = { custSearch = it },
-                        placeholder = { Text("Search by name or phone...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Navy500) },
-                        singleLine = true,
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().testTag("customer_search_input")
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = custSearch,
+                            onValueChange = { custSearch = it },
+                            placeholder = { Text("Search customer by name or phone...", fontSize = 12.sp) },
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Navy500, modifier = Modifier.size(18.dp)) },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("customer_search_input")
+                        )
+                        IconButton(
+                            onClick = {
+                                showCustomerDialog = false
+                                showQuickAddCustomerDialog = true
+                            },
+                            modifier = Modifier.size(42.dp)
+                        ) {
+                            Icon(Icons.Default.PersonAdd, contentDescription = "New Customer", tint = Navy900)
+                        }
+                    }
 
                     // Walk-in Customer Quick Option
                     Surface(
@@ -199,7 +231,7 @@ fun SalesPosScreen(
                         }
                     }
 
-                    Divider(modifier = Modifier.padding(vertical = 4.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
                     Text("Registered Customers (${filteredCusts.size})", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
 
@@ -226,7 +258,7 @@ fun SalesPosScreen(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(cust.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
-                                        Text("📞 ${cust.phone.ifBlank { "No phone" }}", fontSize = 11.sp, color = Navy500)
+                                        Text("📞 ${cust.phone.ifBlank { "No phone" }} • ${cust.address.ifBlank { "No address" }}", fontSize = 11.sp, color = Navy500)
                                     }
                                     if (cust.balance > 0) {
                                         StatusBadge(
@@ -245,18 +277,78 @@ fun SalesPosScreen(
         )
     }
 
-    // Cashier Selector Dialog
+    // Quick Add Customer Dialog
+    if (showQuickAddCustomerDialog) {
+        var newCustName by remember { mutableStateOf("") }
+        var newCustPhone by remember { mutableStateOf("") }
+        var newCustAddress by remember { mutableStateOf("") }
+
+        AlertDialog(
+            onDismissRequest = { showQuickAddCustomerDialog = false },
+            title = {
+                Text("Quick Register Customer", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = newCustName,
+                        onValueChange = { newCustName = it },
+                        label = { Text("Customer / Contractor Name *") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("new_cust_name_input")
+                    )
+                    OutlinedTextField(
+                        value = newCustPhone,
+                        onValueChange = { newCustPhone = it },
+                        label = { Text("Phone / WhatsApp") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = newCustAddress,
+                        onValueChange = { newCustAddress = it },
+                        label = { Text("Address / Site Location") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (newCustName.isNotBlank()) {
+                            viewModel.quickAddCustomer(newCustName, newCustPhone, newCustAddress) {
+                                successToast = "Customer '${newCustName.trim()}' added & selected"
+                            }
+                            showQuickAddCustomerDialog = false
+                        }
+                    },
+                    enabled = newCustName.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("save_quick_customer_button")
+                ) {
+                    Text("Save & Select")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showQuickAddCustomerDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Cashier Switcher Dialog
     if (showCashierSelectorDialog) {
         var customCashierName by remember { mutableStateOf("") }
         var cashierSearchQuery by remember { mutableStateOf("") }
 
         val activeCashiers = remember(users, cashierSearchQuery) {
             users.filter { it.isActive && (cashierSearchQuery.isBlank() ||
-                    it.fullName.contains(cashierSearchQuery, ignoreCase = true) ||
-                    it.username.contains(cashierSearchQuery, ignoreCase = true)) }
-        }
-        val inactiveCashiers = remember(users, cashierSearchQuery) {
-            users.filter { !it.isActive && (cashierSearchQuery.isBlank() ||
                     it.fullName.contains(cashierSearchQuery, ignoreCase = true) ||
                     it.username.contains(cashierSearchQuery, ignoreCase = true)) }
         }
@@ -270,8 +362,8 @@ fun SalesPosScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
-                        Text("Select Active Cashier", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
-                        Text("Assign operator for sales & invoices", fontSize = 11.sp, color = Navy500)
+                        Text("Active Cashier & Operator", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+                        Text("Assign operator for sales receipts & audit", fontSize = 11.sp, color = Navy500)
                     }
                     IconButton(onClick = { showCashierSelectorDialog = false }, modifier = Modifier.size(24.dp)) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Navy500)
@@ -283,7 +375,6 @@ fun SalesPosScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Current Active Cashier Notice
                     Surface(
                         color = Navy900,
                         shape = RoundedCornerShape(8.dp),
@@ -302,22 +393,22 @@ fun SalesPosScreen(
                         }
                     }
 
-                    if (users.size > 3) {
+                    if (users.size > 2) {
                         OutlinedTextField(
                             value = cashierSearchQuery,
                             onValueChange = { cashierSearchQuery = it },
-                            placeholder = { Text("Filter cashier list...", fontSize = 12.sp) },
+                            placeholder = { Text("Filter staff...", fontSize = 12.sp) },
                             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             singleLine = true,
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().testTag("pos_cashier_search_input")
+                            modifier = Modifier.fillMaxWidth()
                         )
                     }
 
-                    Text("Active Cashiers (${activeCashiers.size}):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy800)
+                    Text("System Cashiers (${activeCashiers.size}):", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy800)
 
                     LazyColumn(
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 200.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 180.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(activeCashiers, key = { it.id }) { u ->
@@ -326,7 +417,7 @@ fun SalesPosScreen(
                             Surface(
                                 onClick = {
                                     val name = u.fullName.ifBlank { u.username }
-                                    viewModel.setActiveCashierName(name, u)
+                                    viewModel.setActiveCashier(name)
                                     showCashierSelectorDialog = false
                                 },
                                 shape = RoundedCornerShape(8.dp),
@@ -346,37 +437,10 @@ fun SalesPosScreen(
                                             fontSize = 13.sp,
                                             color = Navy900
                                         )
-                                        Text("Role: ${u.role} • @${u.username}", fontSize = 11.sp, color = Navy600)
+                                        Text("Role: ${u.role}", fontSize = 11.sp, color = Navy600)
                                     }
                                     if (isSelected) {
-                                        StatusBadge(text = "CURRENT", backgroundColor = Emerald100, textColor = Emerald700)
-                                    }
-                                }
-                            }
-                        }
-
-                        if (inactiveCashiers.isNotEmpty()) {
-                            item {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text("Inactive Staff (Disabled):", fontSize = 11.sp, color = Slate400, fontWeight = FontWeight.SemiBold)
-                            }
-                            items(inactiveCashiers, key = { "inactive_${it.id}" }) { inact ->
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Slate100,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.padding(8.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(
-                                            text = inact.fullName.ifBlank { inact.username },
-                                            fontSize = 12.sp,
-                                            color = Slate500
-                                        )
-                                        StatusBadge(text = "INACTIVE", backgroundColor = Rose100, textColor = Rose600)
+                                        StatusBadge(text = "ACTIVE", backgroundColor = Emerald100, textColor = Emerald700)
                                     }
                                 }
                             }
@@ -385,7 +449,7 @@ fun SalesPosScreen(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 2.dp))
 
-                    Text("Or Enter Custom Cashier Name:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
+                    Text("Or Enter Custom Cashier / Operator Name:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -402,14 +466,13 @@ fun SalesPosScreen(
                         Button(
                             onClick = {
                                 if (customCashierName.isNotBlank()) {
-                                    viewModel.setActiveCashierName(customCashierName.trim())
+                                    viewModel.setActiveCashier(customCashierName.trim())
                                     showCashierSelectorDialog = false
                                 }
                             },
                             enabled = customCashierName.isNotBlank(),
                             colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.testTag("apply_custom_cashier_button")
+                            shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Set", fontSize = 12.sp)
                         }
@@ -417,6 +480,176 @@ fun SalesPosScreen(
                 }
             },
             confirmButton = {}
+        )
+    }
+
+    // Custom Uncataloged Item Dialog (Paint tinting, custom cutting, service)
+    if (showCustomItemDialog) {
+        var customName by remember { mutableStateOf("") }
+        var customPrice by remember { mutableStateOf("") }
+        var customQty by remember { mutableStateOf("1") }
+        var customUnit by remember { mutableStateOf("Pcs") }
+
+        AlertDialog(
+            onDismissRequest = { showCustomItemDialog = false },
+            title = {
+                Text("Add Custom Line Item", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 16.sp)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Add non-inventory product, paint tinting charge or service to the bill:", fontSize = 12.sp, color = Navy600)
+                    OutlinedTextField(
+                        value = customName,
+                        onValueChange = { customName = it },
+                        label = { Text("Item Name / Description *") },
+                        placeholder = { Text("e.g. Paint Tinting / Custom Cut Wire") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().testTag("custom_item_name_input")
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(
+                            value = customPrice,
+                            onValueChange = { customPrice = it },
+                            label = { Text("Unit Price ($currency) *") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1.2f).testTag("custom_item_price_input")
+                        )
+                        OutlinedTextField(
+                            value = customQty,
+                            onValueChange = { customQty = it },
+                            label = { Text("Qty") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(0.8f)
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        listOf("Pcs", "Gallon", "Litre", "Meter", "Kg", "Job").forEach { u ->
+                            FilterChip(
+                                selected = customUnit == u,
+                                onClick = { customUnit = u },
+                                label = { Text(u, fontSize = 10.sp) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val price = customPrice.toDoubleOrNull() ?: 0.0
+                        val qty = customQty.toDoubleOrNull() ?: 1.0
+                        if (customName.isNotBlank() && price > 0) {
+                            viewModel.addCustomItemToCart(
+                                name = customName.trim(),
+                                price = price,
+                                quantity = qty,
+                                unit = customUnit
+                            )
+                            showCustomItemDialog = false
+                            successToast = "Added custom item '${customName.trim()}'"
+                        }
+                    },
+                    enabled = customName.isNotBlank() && (customPrice.toDoubleOrNull() ?: 0.0) > 0,
+                    colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("save_custom_item_button")
+                ) {
+                    Text("Add to Bill")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomItemDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Edit Cart Item Dialog (Price override, Item discount, custom color/variation)
+    if (editingCartItem != null) {
+        val item = editingCartItem!!
+        var editQty by remember { mutableStateOf(if (item.quantity % 1.0 == 0.0) item.quantity.toInt().toString() else "%.2f".format(item.quantity)) }
+        var editPrice by remember { mutableStateOf("%.2f".format(item.unitPrice)) }
+        var editDisc by remember { mutableStateOf(if (item.itemDiscount > 0) "%.2f".format(item.itemDiscount) else "") }
+        var editVariation by remember { mutableStateOf(item.customVariation) }
+
+        AlertDialog(
+            onDismissRequest = { editingCartItem = null },
+            title = {
+                Text("Edit Cart Item: ${item.product.name}", fontWeight = FontWeight.Bold, color = Navy900, fontSize = 15.sp)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Standard Price: $currency %.2f / %s".format(item.product.salePrice, item.product.unit), fontSize = 12.sp, color = Navy600)
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedTextField(
+                            value = editQty,
+                            onValueChange = { editQty = it },
+                            label = { Text("Quantity (${item.product.unit})") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("edit_item_qty_input")
+                        )
+                        OutlinedTextField(
+                            value = editPrice,
+                            onValueChange = { editPrice = it },
+                            label = { Text("Unit Price ($currency)") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f).testTag("edit_item_price_input")
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = editDisc,
+                        onValueChange = { editDisc = it },
+                        label = { Text("Line Item Discount ($currency)") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = editVariation,
+                        onValueChange = { editVariation = it },
+                        label = { Text("Color Code / Batch / Variation") },
+                        placeholder = { Text("e.g. Color #101 Off-White or Drum Size") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val q = editQty.toDoubleOrNull() ?: item.quantity
+                        val p = editPrice.toDoubleOrNull() ?: item.unitPrice
+                        val d = editDisc.toDoubleOrNull() ?: 0.0
+                        viewModel.updateCartItemFull(
+                            productId = item.product.id,
+                            quantity = q,
+                            unitPrice = p,
+                            itemDiscount = d,
+                            customVariation = editVariation
+                        )
+                        editingCartItem = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Apply Changes")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { editingCartItem = null }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 
@@ -430,7 +663,7 @@ fun SalesPosScreen(
             text = {
                 if (heldCarts.isEmpty()) {
                     Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text("No held sales at this time.", color = Navy500, fontSize = 13.sp)
+                        Text("No held sales in temporary memory.", color = Navy500, fontSize = 13.sp)
                     }
                 } else {
                     LazyColumn(
@@ -496,7 +729,7 @@ fun SalesPosScreen(
         )
     }
 
-    // Quick Discount Dialog
+    // Global Discount Dialog
     if (showDiscountDialog) {
         var discVal by remember { mutableStateOf(if (discountAmount > 0) discountAmount.toString() else "") }
 
@@ -517,7 +750,7 @@ fun SalesPosScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        listOf(50.0, 100.0, 200.0, 500.0).forEach { amt ->
+                        listOf(50.0, 100.0, 200.0, 500.0, 1000.0).forEach { amt ->
                             OutlinedButton(
                                 onClick = { discVal = amt.toString() },
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
@@ -581,8 +814,7 @@ fun SalesPosScreen(
 
     // Professional Checkout Dialog
     if (showCheckoutDialog) {
-        var discInput by remember { mutableStateOf(if (discountAmount > 0) discountAmount.toString() else "") }
-        var recInput by remember { mutableStateOf(if (receivedAmount > 0) receivedAmount.toString() else "%.2f".format(netAmount)) }
+        var recInput by remember { mutableStateOf(if (receivedAmount > 0) "%.2f".format(receivedAmount) else "%.2f".format(netAmount)) }
 
         val recVal = recInput.toDoubleOrNull() ?: 0.0
         val changeReturn = (recVal - netAmount).coerceAtLeast(0.0)
@@ -692,8 +924,8 @@ fun SalesPosScreen(
                                     Text(
                                         text = when(mode) {
                                             "Cash" -> "💵 Cash"
-                                            "Bank" -> "💳 Bank / Card"
-                                            else -> "📒 Credit (Udhar)"
+                                            "Bank" -> "💳 Bank / Online"
+                                            else -> "📒 Credit (Khata)"
                                         },
                                         fontSize = 11.sp
                                     )
@@ -719,7 +951,7 @@ fun SalesPosScreen(
                     // Quick Pay Tendered Buttons
                     if (paymentType == "Cash") {
                         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("⚡ Quick Pay Tendered:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
+                            Text("⚡ Quick Tendered Amount:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = Navy700)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -806,7 +1038,7 @@ fun SalesPosScreen(
                                 lastSaleItems = items
                                 showCheckoutDialog = false
                                 showReceiptDialog = true
-                                successToast = "Sale recorded successfully! Invoice #${sale.invoiceNumber}"
+                                successToast = "Sale completed! Invoice #${sale.invoiceNumber}"
                             },
                             onError = { err ->
                                 errorMessage = err
@@ -832,7 +1064,7 @@ fun SalesPosScreen(
 
     Scaffold(
         topBar = {
-            // PROFESSIONAL POS HEADER
+            // PROFESSIONAL SENTRY STORE POS HEADER WITH LIVE DATE & TIME
             Surface(
                 color = Navy900,
                 shadowElevation = 4.dp
@@ -843,16 +1075,17 @@ fun SalesPosScreen(
                         .statusBarsPadding()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
+                    // Top Row: Logo, Store & Cashier, Live Clock, Status
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // Left: Back button + Store Logo + Store Name & Branch
+                        // Left: Back button + Store Logo + Store Name & Cashier
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1.3f)
                         ) {
                             IconButton(
                                 onClick = onNavigateBack,
@@ -862,8 +1095,8 @@ fun SalesPosScreen(
                             }
 
                             ShopLogoAvatar(
-                                logoUri = null,
-                                size = 34.dp
+                                logoUri = storeSettings?.logoUri,
+                                size = 36.dp
                             )
 
                             Column(
@@ -881,7 +1114,7 @@ fun SalesPosScreen(
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                     Text(
-                                        text = "$branchDisplayName • Cashier: $activeCashierName",
+                                        text = "$branchDisplayName | Cashier: $activeCashierName",
                                         color = Gold400,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Medium,
@@ -893,11 +1126,13 @@ fun SalesPosScreen(
                             }
                         }
 
-                        // Right: Status Badges (Secure POS / Offline Ready) + Barcode Scanner Trigger
+                        // Right: Live Clock & Offline Badge
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            LiveClockHeaderWidget(showSeconds = true)
+
                             Surface(
                                 color = Emerald900.copy(alpha = 0.6f),
                                 shape = RoundedCornerShape(12.dp),
@@ -972,7 +1207,7 @@ fun SalesPosScreen(
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Gold800,
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                                    modifier = Modifier.padding(vertical = 5.dp)
                                 )
                             }
 
@@ -993,12 +1228,12 @@ fun SalesPosScreen(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Navy800,
-                                        modifier = Modifier.padding(vertical = 4.dp)
+                                        modifier = Modifier.padding(vertical = 5.dp)
                                     )
                                 }
                             }
                         }
-                        Divider(color = Slate200, thickness = 0.5.dp)
+                        HorizontalDivider(color = Slate200, thickness = 0.5.dp)
                     }
 
                     // Summary Strip: Subtotal, Discount & Grand Total
@@ -1030,7 +1265,7 @@ fun SalesPosScreen(
                             )
                         }
 
-                        // Action Buttons: Hold, Clear, and Large Checkout
+                        // Action Buttons: Hold, Custom Item, Clear, and Large Checkout
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1057,6 +1292,15 @@ fun SalesPosScreen(
                                         color = Navy800
                                     )
                                 }
+                            }
+
+                            // Custom Line Item Button
+                            OutlinedButton(
+                                onClick = { showCustomItemDialog = true },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)
+                            ) {
+                                Icon(Icons.Default.AddCircleOutline, contentDescription = "Custom Item", modifier = Modifier.size(16.dp), tint = Navy800)
                             }
 
                             // Clear Cart Button (if cart has items)
@@ -1188,7 +1432,7 @@ fun SalesPosScreen(
                                 color = Navy900
                             )
                             Text(
-                                text = if (selectedCustomer != null) "Tap to change customer" else "Tap to assign registered customer",
+                                text = if (selectedCustomer != null) "Balance: $currency %.0f • Tap to change".format(selectedCustomer!!.balance) else "Tap to assign contractor or customer",
                                 fontSize = 10.sp,
                                 color = Navy500
                             )
@@ -1249,7 +1493,7 @@ fun SalesPosScreen(
                             currentTab = PosTab.CATALOG
                         }
                     },
-                    placeholder = { Text("Search product name, category or barcode...", fontSize = 12.sp) },
+                    placeholder = { Text("Search paint, hardware, building materials or scan barcode...", fontSize = 12.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Navy500, modifier = Modifier.size(18.dp)) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
@@ -1328,7 +1572,7 @@ fun SalesPosScreen(
                         )
                         Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Catalog (${products.size})",
+                            text = "Store Catalog (${products.size})",
                             fontWeight = FontWeight.Bold,
                             fontSize = 12.sp,
                             color = if (currentTab == PosTab.CATALOG) Color.White else Navy800
@@ -1341,17 +1585,48 @@ fun SalesPosScreen(
 
             // Category Filter Pills (Visible when in Catalog or search)
             if (currentTab == PosTab.CATALOG || searchQuery.isNotBlank()) {
-                LazyRow(
+                Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    items(categories) { cat ->
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = { selectedCategory = cat },
-                            label = { Text(cat, fontSize = 11.sp) },
-                            modifier = Modifier.testTag("category_chip_$cat")
-                        )
+                    LazyRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        items(categories) { cat ->
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = { selectedCategory = cat },
+                                label = { Text(cat, fontSize = 11.sp) },
+                                modifier = Modifier.testTag("category_chip_$cat")
+                            )
+                        }
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        IconButton(
+                            onClick = { viewMode = PosViewMode.GRID },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.GridView,
+                                contentDescription = "Grid",
+                                tint = if (viewMode == PosViewMode.GRID) Navy900 else Slate400,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        IconButton(
+                            onClick = { viewMode = PosViewMode.LIST },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.ViewList,
+                                contentDescription = "List",
+                                tint = if (viewMode == PosViewMode.LIST) Navy900 else Slate400,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -1401,20 +1676,30 @@ fun SalesPosScreen(
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "Search by name, category or barcode to add items to bill.",
+                                    text = "Select products from catalog, search by name/barcode or add custom line items.",
                                     textAlign = TextAlign.Center,
                                     fontSize = 12.sp,
                                     color = Navy500
                                 )
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Button(
-                                    onClick = { currentTab = PosTab.CATALOG },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Browse Catalog")
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Button(
+                                        onClick = { currentTab = PosTab.CATALOG },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Inventory, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Browse Store Catalog")
+                                    }
+                                    OutlinedButton(
+                                        onClick = { showCustomItemDialog = true },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Custom Item")
+                                    }
                                 }
                             }
                         }
@@ -1423,7 +1708,7 @@ fun SalesPosScreen(
                             modifier = Modifier.fillMaxSize(),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(cart, key = { it.product.id }) { item ->
+                            items(cart, key = { "${it.product.id}_${it.customVariation}" }) { item ->
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1439,16 +1724,31 @@ fun SalesPosScreen(
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Product Details
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(
-                                                text = item.product.name,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                color = Navy900,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
+                                        // Product Details with editable tap
+                                        Column(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable { editingCartItem = item }
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text(
+                                                    text = item.product.name,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Navy900,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Navy400, modifier = Modifier.size(12.dp))
+                                            }
+                                            if (item.customVariation.isNotBlank()) {
+                                                Text(
+                                                    text = "Variation: ${item.customVariation}",
+                                                    fontSize = 11.sp,
+                                                    color = Gold700,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
                                             Spacer(modifier = Modifier.height(2.dp))
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
@@ -1466,6 +1766,17 @@ fun SalesPosScreen(
                                                             text = item.product.category,
                                                             fontSize = 9.sp,
                                                             color = Navy500,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                                if (item.itemDiscount > 0) {
+                                                    Surface(color = Rose100, shape = RoundedCornerShape(4.dp)) {
+                                                        Text(
+                                                            text = "-$currency %.0f".format(item.itemDiscount),
+                                                            fontSize = 9.sp,
+                                                            color = Rose600,
+                                                            fontWeight = FontWeight.Bold,
                                                             modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                                         )
                                                     }
@@ -1498,6 +1809,7 @@ fun SalesPosScreen(
                                             }
 
                                             Surface(
+                                                onClick = { editingCartItem = item },
                                                 shape = RoundedCornerShape(6.dp),
                                                 color = Slate50,
                                                 border = ButtonDefaults.outlinedButtonBorder,
@@ -1539,19 +1851,30 @@ fun SalesPosScreen(
                         }
                     }
                 } else {
-                    // QUICK CATALOG GRID VIEW
+                    // QUICK CATALOG VIEW (GRID or LIST)
                     if (filteredProducts.isEmpty()) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text(
-                                text = "No products found matching '$searchQuery'",
-                                fontSize = 13.sp,
-                                color = Navy500
-                            )
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "No products found matching '$searchQuery'",
+                                    fontSize = 13.sp,
+                                    color = Navy500
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { showCustomItemDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900)
+                                ) {
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Add as Custom Item")
+                                }
+                            }
                         }
-                    } else {
+                    } else if (viewMode == PosViewMode.GRID) {
                         LazyVerticalGrid(
                             columns = GridCells.Adaptive(minSize = 160.dp),
                             modifier = Modifier.fillMaxSize(),
@@ -1603,7 +1926,7 @@ fun SalesPosScreen(
                                                     shape = RoundedCornerShape(10.dp)
                                                 ) {
                                                     Text(
-                                                        text = "x%.0f in cart".format(inCartItem.quantity),
+                                                        text = "x%.0f in bill".format(inCartItem.quantity),
                                                         fontSize = 9.sp,
                                                         color = Emerald700,
                                                         fontWeight = FontWeight.Bold,
@@ -1651,6 +1974,64 @@ fun SalesPosScreen(
                                                     containerColor = Navy900,
                                                     contentColor = Color.White
                                                 ),
+                                                modifier = Modifier.size(32.dp)
+                                            ) {
+                                                Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // LIST VIEW
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            items(filteredProducts, key = { it.id }) { product ->
+                                val inCartItem = cart.find { it.product.id == product.id }
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            viewModel.addToCart(product)
+                                            successToast = "+1 '${product.name}'"
+                                        },
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (inCartItem != null) Blue50 else Color.White
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(product.name, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Navy900)
+                                            Text(
+                                                text = "${product.category} • $currency %.2f / %s • Stock: %.0f".format(product.salePrice, product.unit, product.stockQuantity),
+                                                fontSize = 11.sp,
+                                                color = Navy600
+                                            )
+                                        }
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            if (inCartItem != null) {
+                                                Surface(
+                                                    color = Emerald100,
+                                                    shape = RoundedCornerShape(6.dp)
+                                                ) {
+                                                    Text("x%.0f".format(inCartItem.quantity), color = Emerald700, fontSize = 11.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                                }
+                                            }
+                                            FilledIconButton(
+                                                onClick = {
+                                                    viewModel.addToCart(product)
+                                                    successToast = "+1 '${product.name}'"
+                                                },
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Navy900),
                                                 modifier = Modifier.size(32.dp)
                                             ) {
                                                 Icon(Icons.Default.Add, contentDescription = "Add", modifier = Modifier.size(16.dp))

@@ -1,5 +1,9 @@
 package com.example.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -14,19 +18,26 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.R
 import com.example.data.entity.StoreSettings
 import com.example.ui.components.AppHeader
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
 import com.example.util.BiometricPromptHelper
+import com.example.util.BrandingImageHelper
 
 @Composable
 fun SettingsScreen(
@@ -46,6 +57,12 @@ fun SettingsScreen(
     var biometricTestMessage by remember { mutableStateOf<String?>(null) }
     var isBiometricTestSuccess by remember { mutableStateOf(false) }
 
+    var appDisplayName by remember(storeSettings) { mutableStateOf(storeSettings?.appDisplayName ?: "VIP POS") }
+    var posBrandName by remember(storeSettings) { mutableStateOf(storeSettings?.posBrandName ?: "VIP POS") }
+    var tagline by remember(storeSettings) { mutableStateOf(storeSettings?.tagline ?: "SMART | FAST | RELIABLE") }
+    var brandDescription by remember(storeSettings) { mutableStateOf(storeSettings?.brandDescription ?: "ALL-IN-ONE BUSINESS SOLUTION") }
+    var customLogoUri by remember(storeSettings) { mutableStateOf(storeSettings?.logoUri) }
+
     var storeName by remember(storeSettings) { mutableStateOf(storeSettings?.storeName ?: "CH UMER POS.03080018035") }
     var ownerName by remember(storeSettings) { mutableStateOf(storeSettings?.ownerName ?: "CH UMER") }
     var phone by remember(storeSettings) { mutableStateOf(storeSettings?.phone ?: "03080018035") }
@@ -59,6 +76,17 @@ fun SettingsScreen(
 
     var showSaveToast by remember { mutableStateOf(false) }
     var showEmergencyDialog by remember { mutableStateOf(false) }
+
+    val logoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val savedPath = BrandingImageHelper.saveCustomLogoFromUri(context, uri, customLogoUri)
+            if (savedPath != null) {
+                customLogoUri = savedPath
+            }
+        }
+    }
 
     val accentPaletteColors = listOf(
         Pair("Royal Blue", Color(0xFF1D4ED8)),
@@ -318,8 +346,232 @@ fun SettingsScreen(
                 }
             }
 
-            // 3. Store Configuration Settings
-            SectionHeader(title = "Store & Business Configuration", subtitle = "Branding, Tax & Invoicing")
+            // 3. Brand Identity & Logo Customization
+            SectionHeader(title = "Brand Identity & Logo Customization", subtitle = "Customize store logo, application branding and header appearance")
+
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("settings_branding_customization_card"),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Logo Management Sub-section
+                    Text(
+                        text = "Store & POS Logo Management",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Navy900
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        ShopLogoAvatar(
+                            logoUri = customLogoUri,
+                            size = 80.dp,
+                            shape = RoundedCornerShape(12.dp),
+                            borderColor = Gold500,
+                            borderWidth = 2.dp
+                        )
+
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Surface(
+                                color = if (customLogoUri != null) Emerald100 else Navy100,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = if (customLogoUri != null) "✓ Custom Brand Logo Active" else "Default VIP POS Logo Active",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (customLogoUri != null) Emerald800 else Navy900,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { logoPickerLauncher.launch("image/*") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.height(36.dp).testTag("upload_logo_button")
+                                ) {
+                                    Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(if (customLogoUri != null) "Replace" else "Upload", fontSize = 11.5.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        BrandingImageHelper.deleteOldCustomLogo(customLogoUri)
+                                        customLogoUri = null
+                                    },
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                    modifier = Modifier.height(36.dp).testTag("restore_default_logo_button")
+                                ) {
+                                    Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Default", fontSize = 11.5.sp)
+                                }
+                            }
+                        }
+                    }
+
+                    Divider(color = Slate200)
+
+                    // Editable Branding Text Fields
+                    Text(
+                        text = "Branding & Display Texts",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Navy900
+                    )
+
+                    OutlinedTextField(
+                        value = appDisplayName,
+                        onValueChange = { appDisplayName = it },
+                        label = { Text("Application Display Name") },
+                        placeholder = { Text("e.g. CH UMER SENTRY STORE or VIP POS") },
+                        supportingText = { Text("Appears on top app bars, navigation drawer, and home banner") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_app_display_name")
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = posBrandName,
+                            onValueChange = { posBrandName = it },
+                            label = { Text("POS Brand / Badge Name") },
+                            placeholder = { Text("e.g. VIP POS") },
+                            supportingText = { Text("Appears on POS badges & terminal") },
+                            modifier = Modifier.weight(1f).testTag("input_pos_brand_name")
+                        )
+
+                        OutlinedTextField(
+                            value = tagline,
+                            onValueChange = { tagline = it },
+                            label = { Text("Tagline / Subtitle") },
+                            placeholder = { Text("e.g. SMART | FAST | RELIABLE") },
+                            supportingText = { Text("Appears under logo & invoices") },
+                            modifier = Modifier.weight(1f).testTag("input_tagline")
+                        )
+                    }
+
+                    OutlinedTextField(
+                        value = brandDescription,
+                        onValueChange = { brandDescription = it },
+                        label = { Text("Brand Description / Headline") },
+                        placeholder = { Text("e.g. ALL-IN-ONE BUSINESS SOLUTION") },
+                        supportingText = { Text("Appears on dashboard showcase banner") },
+                        modifier = Modifier.fillMaxWidth().testTag("input_brand_description")
+                    )
+
+                    Divider(color = Slate200)
+
+                    // Real-Time Live Branding Preview Card
+                    Text(
+                        text = "Live Real-Time Branding Preview",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Navy900
+                    )
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth().testTag("live_branding_preview_card"),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = Navy900)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                ShopLogoAvatar(
+                                    logoUri = customLogoUri,
+                                    size = 48.dp,
+                                    shape = RoundedCornerShape(8.dp),
+                                    borderColor = Gold400,
+                                    borderWidth = 1.5.dp
+                                )
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = appDisplayName.ifBlank { "CH UMER POS" },
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 15.sp,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = tagline.ifBlank { "SMART | FAST | RELIABLE" },
+                                        fontSize = 11.5.sp,
+                                        color = Gold400,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+
+                                Surface(
+                                    color = Gold500,
+                                    shape = RoundedCornerShape(6.dp)
+                                ) {
+                                    Text(
+                                        text = posBrandName.ifBlank { "VIP POS" },
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Black,
+                                        color = Navy900,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+
+                            Surface(
+                                color = Navy800,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = brandDescription.ifBlank { "ALL-IN-ONE BUSINESS SOLUTION" },
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Slate300
+                                    )
+                                    Text(
+                                        text = "Live Preview",
+                                        fontSize = 9.5.sp,
+                                        color = Emerald400,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 4. Store & Business Configuration
+            SectionHeader(title = "Store Business & Billing Details", subtitle = "Official Name, Address, Tax & Receipt Settings")
 
             Card(
                 modifier = Modifier.fillMaxWidth().testTag("settings_store_config_card"),
@@ -334,7 +586,7 @@ fun SettingsScreen(
                     OutlinedTextField(
                         value = storeName,
                         onValueChange = { storeName = it },
-                        label = { Text("Store Name") },
+                        label = { Text("Business / Store Name") },
                         modifier = Modifier.fillMaxWidth().testTag("settings_store_name")
                     )
 
@@ -435,7 +687,12 @@ fun SettingsScreen(
                     Button(
                         onClick = {
                             val updated = (storeSettings ?: StoreSettings()).copy(
-                                storeName = storeName,
+                                appDisplayName = appDisplayName.ifBlank { "VIP POS" },
+                                posBrandName = posBrandName.ifBlank { "VIP POS" },
+                                tagline = tagline.ifBlank { "SMART | FAST | RELIABLE" },
+                                brandDescription = brandDescription.ifBlank { "ALL-IN-ONE BUSINESS SOLUTION" },
+                                logoUri = customLogoUri,
+                                storeName = storeName.ifBlank { "CH UMER POS.03080018035" },
                                 ownerName = ownerName,
                                 phone = phone,
                                 address = address,
@@ -452,16 +709,32 @@ fun SettingsScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                         modifier = Modifier.fillMaxWidth().testTag("save_store_settings_button")
                     ) {
-                        Text("Save Store Settings")
+                        Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Save Branding & Store Settings", fontWeight = FontWeight.Bold)
                     }
 
                     if (showSaveToast) {
-                        Text(
-                            text = "Settings successfully saved to database!",
-                            color = Emerald600,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Surface(
+                            color = Emerald50,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Emerald300),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(18.dp))
+                                Text(
+                                    text = "Branding & settings successfully saved to local database!",
+                                    color = Emerald800,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
                     }
                 }
             }

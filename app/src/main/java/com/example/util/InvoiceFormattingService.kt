@@ -19,6 +19,9 @@ data class PrintableInvoice(
 
 data class InvoiceHeader(
     val storeName: String,
+    val posBrandName: String = "VIP POS",
+    val tagline: String = "SMART | FAST | RELIABLE",
+    val logoUri: String? = null,
     val ownerName: String,
     val phone: String,
     val email: String,
@@ -28,6 +31,9 @@ data class InvoiceHeader(
 data class InvoiceMeta(
     val invoiceNumber: String,
     val formattedDate: String,
+    val saleDate: String = "",
+    val saleTime: String = "",
+    val timestamp: Long = 0L,
     val cashierName: String,
     val paymentType: String
 )
@@ -64,6 +70,10 @@ object InvoiceFormattingService {
     ): PrintableInvoice {
         val dateFormat = SimpleDateFormat("dd-MMM-yyyy hh:mm a", Locale.getDefault())
         val formattedDate = dateFormat.format(Date(sale.createdAt))
+        val dateOnlyFormat = SimpleDateFormat("dd-MMM-yyyy", Locale.getDefault())
+        val timeOnlyFormat = SimpleDateFormat("hh:mm:ss a", Locale.getDefault())
+        val saleDate = dateOnlyFormat.format(Date(sale.createdAt))
+        val saleTime = timeOnlyFormat.format(Date(sale.createdAt))
 
         val resolvedCashier = when {
             sale.cashierName.isNotBlank() -> sale.cashierName
@@ -87,7 +97,8 @@ object InvoiceFormattingService {
         val qrPayload = buildString {
             appendLine("Store: ${settings.storeName}")
             appendLine("Invoice #: ${sale.invoiceNumber}")
-            appendLine("Date/Time: $formattedDate")
+            appendLine("Date: $saleDate")
+            appendLine("Time: $saleTime")
             appendLine("Customer: ${sale.customerName}")
             appendLine("Total Amount: ${settings.currencySymbol} %.2f".format(net))
             appendLine("Payment Status: ${if (sale.dueAmount <= 0) "Paid" else "Due: " + settings.currencySymbol + " %.2f".format(sale.dueAmount)}")
@@ -97,6 +108,9 @@ object InvoiceFormattingService {
         return PrintableInvoice(
             header = InvoiceHeader(
                 storeName = settings.storeName.ifBlank { "CH UMER POS.03080018035" },
+                posBrandName = settings.posBrandName.ifBlank { "VIP POS" },
+                tagline = settings.tagline.ifBlank { "SMART | FAST | RELIABLE" },
+                logoUri = settings.logoUri,
                 ownerName = settings.ownerName,
                 phone = settings.phone,
                 email = settings.email,
@@ -105,6 +119,9 @@ object InvoiceFormattingService {
             meta = InvoiceMeta(
                 invoiceNumber = sale.invoiceNumber,
                 formattedDate = formattedDate,
+                saleDate = saleDate,
+                saleTime = saleTime,
+                timestamp = sale.createdAt,
                 cashierName = resolvedCashier,
                 paymentType = sale.paymentType
             ),
@@ -145,11 +162,13 @@ object InvoiceFormattingService {
 
         return buildString {
             appendLine(center(invoice.header.storeName))
+            if (invoice.header.tagline.isNotBlank()) appendLine(center(invoice.header.tagline))
             if (invoice.header.phone.isNotBlank()) appendLine(center("Tel: ${invoice.header.phone}"))
             if (invoice.header.address.isNotBlank()) appendLine(center(invoice.header.address))
             appendLine(doubleDivider)
             appendLine(row("Invoice #:", invoice.meta.invoiceNumber))
-            appendLine(row("Date:", invoice.meta.formattedDate))
+            appendLine(row("Date:", invoice.meta.saleDate.ifBlank { invoice.meta.formattedDate }))
+            appendLine(row("Time:", invoice.meta.saleTime))
             appendLine(row("Cashier:", invoice.meta.cashierName))
             appendLine(row("Customer:", invoice.customer.name))
             appendLine(row("Pay Mode:", invoice.meta.paymentType))
@@ -182,7 +201,7 @@ object InvoiceFormattingService {
             if (invoice.footerText.isNotBlank()) {
                 appendLine(center(invoice.footerText))
             }
-            appendLine(center("*** Powered by CH UMER POS ***"))
+            appendLine(center("*** Powered by ${invoice.header.posBrandName} ***"))
         }
     }
 }

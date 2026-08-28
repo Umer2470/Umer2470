@@ -28,10 +28,12 @@ import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
 import com.example.data.entity.StoreSettings
 import com.example.ui.theme.*
+import com.example.util.EscPosThermalPrinterService
 import com.example.util.InvoiceFormattingService
 import com.example.util.PdfGenerator
 import com.example.util.PrintableInvoice
 import com.example.util.QrCodeRenderer
+import kotlinx.coroutines.launch
 import java.io.File
 
 enum class InvoiceViewFormat {
@@ -56,6 +58,8 @@ fun InvoiceReceiptDialog(
     var showQrVerification by remember { mutableStateOf(false) }
     var lastExportedFile by remember { mutableStateOf<File?>(null) }
     var exportSuccessMessage by remember { mutableStateOf<String?>(null) }
+    var isQuickPrinting by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     if (showQrVerification) {
         InvoiceQrVerificationDialog(
@@ -103,23 +107,24 @@ fun InvoiceReceiptDialog(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Header Quick Print Button
                         IconButton(
                             onClick = {
-                                val pdfFormat = if (selectedFormat == InvoiceViewFormat.THERMAL_RECEIPT) {
-                                    PdfGenerator.ReceiptFormat.THERMAL_80MM
-                                } else {
-                                    PdfGenerator.ReceiptFormat.A4
-                                }
-                                val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice, pdfFormat)
-                                if (pdfFile != null) {
-                                    PdfGenerator.printPdfFile(context, pdfFile, "Print_${printableInvoice.meta.invoiceNumber}")
+                                scope.launch {
+                                    val result = EscPosThermalPrinterService.quickRePrintReceipt(
+                                        context = context,
+                                        sale = sale,
+                                        items = items,
+                                        settings = effectiveSettings
+                                    )
+                                    Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
                                 }
                             },
                             modifier = Modifier.testTag("receipt_print_button")
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Print,
-                                contentDescription = "Print",
+                                contentDescription = "Quick Print",
                                 tint = Color.White
                             )
                         }
@@ -271,14 +276,21 @@ fun InvoiceReceiptDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("Invoice: ${printableInvoice.meta.invoiceNumber}", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Navy900)
-                                    Text(printableInvoice.meta.formattedDate, fontSize = 12.sp, color = Navy700)
+                                    Text("Date: ${printableInvoice.meta.saleDate.ifBlank { printableInvoice.meta.formattedDate }}", fontSize = 12.sp, color = Navy700)
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text("Customer: ${printableInvoice.customer.name}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Navy900)
-                                    Text("Cashier: ${printableInvoice.meta.cashierName}", fontSize = 12.sp, color = Navy700)
+                                    Text("Time: ${printableInvoice.meta.saleTime}", fontSize = 12.sp, color = Navy700)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Pay Mode: ${printableInvoice.meta.paymentType}", fontSize = 11.sp, color = Navy700)
+                                    Text("Cashier: ${printableInvoice.meta.cashierName}", fontSize = 11.sp, color = Navy700)
                                 }
 
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
@@ -453,7 +465,10 @@ fun InvoiceReceiptDialog(
                                         }
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
-                                        Text("Date: ${printableInvoice.meta.formattedDate}", fontSize = 11.sp, color = Navy800)
+                                        Text("Date: ${printableInvoice.meta.saleDate.ifBlank { printableInvoice.meta.formattedDate }}", fontSize = 11.sp, color = Navy800, fontWeight = FontWeight.SemiBold)
+                                        if (printableInvoice.meta.saleTime.isNotBlank()) {
+                                            Text("Time: ${printableInvoice.meta.saleTime}", fontSize = 11.sp, color = Navy800)
+                                        }
                                         Text("Payment: ${printableInvoice.meta.paymentType}", fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Emerald700)
                                         Text("Cashier: ${printableInvoice.meta.cashierName}", fontSize = 11.sp, color = Navy800)
                                     }
@@ -564,11 +579,56 @@ fun InvoiceReceiptDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            // Quick Thermal Re-Print Button
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isQuickPrinting = true
+                                        try {
+                                            val result = EscPosThermalPrinterService.quickRePrintReceipt(
+                                                context = context,
+                                                sale = sale,
+                                                items = items,
+                                                settings = effectiveSettings
+                                            )
+                                            Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Print error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        } finally {
+                                            isQuickPrinting = false
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Gold500,
+                                    contentColor = Navy900
+                                ),
+                                modifier = Modifier
+                                    .weight(1.3f)
+                                    .height(44.dp)
+                                    .testTag("dialog_quick_print_button"),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                if (isQuickPrinting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        color = Navy900,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Printing...", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                } else {
+                                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Quick Print", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+
                             // QR Verification Action
                             OutlinedButton(
                                 onClick = { showQrVerification = true },
                                 modifier = Modifier
-                                    .weight(0.9f)
+                                    .weight(0.7f)
                                     .height(44.dp)
                                     .testTag("verify_qr_button"),
                                 shape = RoundedCornerShape(8.dp)
@@ -576,34 +636,6 @@ fun InvoiceReceiptDialog(
                                 Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
                                 Text("QR", fontSize = 12.sp)
-                            }
-
-                            // Save / Export PDF to Device Action
-                            OutlinedButton(
-                                onClick = {
-                                    val pdfFormat = if (selectedFormat == InvoiceViewFormat.THERMAL_RECEIPT) {
-                                        PdfGenerator.ReceiptFormat.THERMAL_80MM
-                                    } else {
-                                        PdfGenerator.ReceiptFormat.A4
-                                    }
-                                    val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice, pdfFormat)
-                                    if (pdfFile != null) {
-                                        lastExportedFile = pdfFile
-                                        exportSuccessMessage = "Exported ${pdfFile.name} to Documents"
-                                        Toast.makeText(context, "Exported PDF to: ${pdfFile.absolutePath}", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        Toast.makeText(context, "Failed to generate PDF", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                modifier = Modifier
-                                    .weight(1.1f)
-                                    .height(44.dp)
-                                    .testTag("save_pdf_button"),
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Icon(Icons.Default.FileDownload, contentDescription = null, modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Save PDF", fontSize = 12.sp)
                             }
 
                             // Share PDF Button
@@ -624,14 +656,14 @@ fun InvoiceReceiptDialog(
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                                 modifier = Modifier
-                                    .weight(1.3f)
+                                    .weight(1.1f)
                                     .height(44.dp)
                                     .testTag("share_pdf_button"),
                                 shape = RoundedCornerShape(8.dp)
                             ) {
                                 Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Share PDF", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Share", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
                     }

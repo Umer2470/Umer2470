@@ -26,6 +26,7 @@ import com.example.ui.components.AppHeader
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
+import com.example.util.EscPosThermalPrinterService
 import com.example.util.PdfGenerator
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -49,9 +50,14 @@ fun InvoiceScreen(
     val storeSettings by viewModel.storeSettings.collectAsState()
     val currency = storeSettings?.currencySymbol ?: "Rs"
 
+    val lastPrinterConfig = remember(storeSettings) {
+        EscPosThermalPrinterService.getLastPrinterConfig(context, storeSettings?.paperWidthMm ?: 80)
+    }
+
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(InvoiceFilter.ALL) }
     var selectedSaleForReceipt by remember { mutableStateOf<Pair<Sale, List<SaleItem>>?>(null) }
+    var printingSaleId by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
 
     if (selectedSaleForReceipt != null) {
@@ -90,7 +96,7 @@ fun InvoiceScreen(
         topBar = {
             AppHeader(
                 title = "Invoices & Receipts",
-                subtitle = "${sales.size} Total Invoices • PDF Export & Digital Records",
+                subtitle = "${sales.size} Total Invoices • One-Tap Thermal Quick Print & PDF",
                 onBackClick = onNavigateBack
             )
         },
@@ -102,7 +108,7 @@ fun InvoiceScreen(
                 .padding(paddingValues)
                 .padding(16.dp)
         ) {
-            // Metrics Summary with PDF Batch Export
+            // Metrics Summary with PDF Batch Export & Printer Status Bar
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -168,12 +174,25 @@ fun InvoiceScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Digital PDF Audit Archives",
-                            fontSize = 11.sp,
-                            color = Gold400,
-                            fontWeight = FontWeight.Medium
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Print,
+                                contentDescription = null,
+                                tint = Gold400,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Thermal Re-Print: ${lastPrinterConfig.paperWidthMm}mm ESC/POS ${if (!lastPrinterConfig.deviceName.isNullOrBlank()) "(${lastPrinterConfig.deviceName})" else "(Ready)"}",
+                                fontSize = 11.sp,
+                                color = Gold400,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1
+                            )
+                        }
 
                         FilledTonalButton(
                             onClick = {
@@ -289,6 +308,7 @@ fun InvoiceScreen(
                     items(filteredSales, key = { it.id }) { sale ->
                         val dateFormat = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                         val formattedDate = dateFormat.format(Date(sale.createdAt))
+                        val isPrinting = printingSaleId == sale.id
 
                         Card(
                             modifier = Modifier
@@ -306,59 +326,130 @@ fun InvoiceScreen(
                             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                             shape = RoundedCornerShape(10.dp)
                         ) {
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                    .padding(14.dp)
                             ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = sale.invoiceNumber,
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Navy900
+                                            )
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            StatusBadge(
+                                                text = if (sale.dueAmount <= 0) "PAID" else "DUE: $currency %.0f".format(sale.dueAmount),
+                                                backgroundColor = if (sale.dueAmount <= 0) Emerald100 else Rose100,
+                                                textColor = if (sale.dueAmount <= 0) Emerald700 else Rose600
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
                                         Text(
-                                            text = sale.invoiceNumber,
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Navy900
+                                            text = "Customer: ${sale.customerName}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Navy800
                                         )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        StatusBadge(
-                                            text = if (sale.dueAmount <= 0) "PAID" else "DUE: $currency %.0f".format(sale.dueAmount),
-                                            backgroundColor = if (sale.dueAmount <= 0) Emerald100 else Rose100,
-                                            textColor = if (sale.dueAmount <= 0) Emerald700 else Rose600
+                                        Text(
+                                            text = "$formattedDate • Pay: ${sale.paymentType} • Cashier: ${sale.cashierName.ifBlank { "Muhammad Umer" }}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = Navy600
                                         )
                                     }
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "Customer: ${sale.customerName}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Navy800
-                                    )
-                                    Text(
-                                        text = "$formattedDate • Pay: ${sale.paymentType} • Cashier: ${sale.cashierName.ifBlank { "Muhammad Umer" }}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Navy600
-                                    )
-                                }
 
-                                Column(
-                                    horizontalAlignment = Alignment.End,
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
                                     Text(
                                         text = "$currency %.2f".format(sale.netAmount),
                                         style = MaterialTheme.typography.titleMedium,
                                         fontWeight = FontWeight.Black,
                                         color = Navy900
                                     )
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                HorizontalDivider(color = Slate100)
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                // Quick Action Row with dedicated 'Quick Print' button
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Pay: ${sale.paymentType}",
+                                        fontSize = 11.sp,
+                                        color = Slate500,
+                                        fontWeight = FontWeight.Medium
+                                    )
 
                                     Row(
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        // Quick Share PDF
-                                        FilledIconButton(
+                                        // 1. Quick Print Button (One-Tap Thermal Re-print)
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    printingSaleId = sale.id
+                                                    try {
+                                                        val (s, items) = viewModel.getSaleDetails(sale.id)
+                                                        if (s != null) {
+                                                            val result = EscPosThermalPrinterService.quickRePrintReceipt(
+                                                                context = context,
+                                                                sale = s,
+                                                                items = items,
+                                                                settings = storeSettings
+                                                            )
+                                                            Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                                        } else {
+                                                            Toast.makeText(context, "Failed to load invoice items", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        Toast.makeText(context, "Print error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                    } finally {
+                                                        printingSaleId = null
+                                                    }
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = Gold500,
+                                                contentColor = Navy900
+                                            ),
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier
+                                                .height(32.dp)
+                                                .testTag("quick_print_${sale.id}")
+                                        ) {
+                                            if (isPrinting) {
+                                                CircularProgressIndicator(
+                                                    modifier = Modifier.size(12.dp),
+                                                    color = Navy900,
+                                                    strokeWidth = 2.dp
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Printing...", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            } else {
+                                                Icon(
+                                                    imageVector = Icons.Default.Print,
+                                                    contentDescription = "Quick Print",
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Quick Print", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+
+                                        // 2. Quick Share PDF
+                                        FilledTonalIconButton(
                                             onClick = {
                                                 scope.launch {
                                                     val (s, items) = viewModel.getSaleDetails(sale.id)
@@ -378,9 +469,9 @@ fun InvoiceScreen(
                                                     }
                                                 }
                                             },
-                                            colors = IconButtonDefaults.filledIconButtonColors(
-                                                containerColor = Navy900,
-                                                contentColor = Color.White
+                                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                                containerColor = Navy100,
+                                                contentColor = Navy900
                                             ),
                                             modifier = Modifier
                                                 .size(32.dp)
@@ -389,33 +480,37 @@ fun InvoiceScreen(
                                             Icon(
                                                 imageVector = Icons.Default.Share,
                                                 contentDescription = "Share PDF",
-                                                modifier = Modifier.size(16.dp)
+                                                modifier = Modifier.size(15.dp)
                                             )
                                         }
 
-                                        // Receipt Dialog Button
-                                        Surface(
-                                            color = Navy100,
-                                            shape = RoundedCornerShape(6.dp)
+                                        // 3. Receipt Dialog Button
+                                        OutlinedButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    val (s, items) = viewModel.getSaleDetails(sale.id)
+                                                    if (s != null) {
+                                                        selectedSaleForReceipt = Pair(s, items)
+                                                    }
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(6.dp),
+                                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(32.dp).testTag("view_receipt_${sale.id}")
                                         ) {
-                                            Row(
-                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.ReceiptLong,
-                                                    contentDescription = "View",
-                                                    tint = Navy900,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(4.dp))
-                                                Text(
-                                                    text = "Receipt",
-                                                    fontSize = 11.sp,
-                                                    color = Navy900,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.ReceiptLong,
+                                                contentDescription = "View",
+                                                tint = Navy800,
+                                                modifier = Modifier.size(13.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(3.dp))
+                                            Text(
+                                                text = "View",
+                                                fontSize = 11.sp,
+                                                color = Navy800,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
                                         }
                                     }
                                 }
@@ -427,3 +522,4 @@ fun InvoiceScreen(
         }
     }
 }
+

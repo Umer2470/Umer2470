@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,18 +14,26 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import com.example.R
 import com.example.data.api.network.ConnectionState
 import com.example.data.api.security.AppActivationManager
 import com.example.ui.components.AnalyticsChartsWidget
 import com.example.ui.components.KpiCard
+import com.example.ui.components.LiveClockBadge
 import com.example.ui.components.SectionHeader
+import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.components.SidebarNavigationDrawerContent
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
@@ -101,24 +111,36 @@ fun DashboardScreen(
             topBar = {
                 TopAppBar(
                     title = {
-                        Column {
-                            Text(
-                                text = storeSettings?.storeName ?: "CH UMER POS.03080018035",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            ShopLogoAvatar(
+                                logoUri = storeSettings?.logoUri,
+                                size = 38.dp,
+                                shape = RoundedCornerShape(8.dp),
+                                borderColor = Gold400,
+                                borderWidth = 1.dp
                             )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column {
                                 Text(
-                                    text = "Tel: 03080018035 • ",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = Gold400
+                                    text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "CH UMER POS.03080018035",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
                                 )
-                                Text(
-                                    text = if (connectionState == ConnectionState.CONNECTED) "Online" else "Offline Safe",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (connectionState == ConnectionState.CONNECTED) Emerald500 else Gold400
-                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = (storeSettings?.tagline ?: "SMART | FAST | RELIABLE") + " • ",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Gold400
+                                    )
+                                    Text(
+                                        text = if (connectionState == ConnectionState.CONNECTED) "Online" else "Offline Safe",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (connectionState == ConnectionState.CONNECTED) Emerald500 else Gold400
+                                    )
+                                }
                             }
                         }
                     },
@@ -131,6 +153,7 @@ fun DashboardScreen(
                         }
                     },
                     actions = {
+                        LiveClockBadge(compact = true)
                         IconButton(
                             onClick = { onNavigate("settings") },
                             modifier = Modifier.testTag("dashboard_settings_button")
@@ -200,6 +223,120 @@ fun DashboardScreen(
                             contentDescription = null,
                             tint = Color.White
                         )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // VIP POS Commercial Showcase Card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("vip_pos_showcase_banner"),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Navy900),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(160.dp)
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.img_vip_pos_branding),
+                                contentDescription = "VIP POS Commercial Solution",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                            )
+                            // Elegant Dark-Gold Gradient Overlay
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(
+                                        Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color.Transparent,
+                                                Navy900.copy(alpha = 0.65f),
+                                                Navy900.copy(alpha = 0.95f)
+                                            )
+                                        )
+                                    )
+                            )
+                            // Overlay Badges & Tagline
+                            Row(
+                                modifier = Modifier
+                                    .align(Alignment.BottomStart)
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                ShopLogoAvatar(
+                                    logoUri = storeSettings?.logoUri,
+                                    size = 46.dp,
+                                    shape = RoundedCornerShape(8.dp),
+                                    borderColor = Gold400,
+                                    borderWidth = 1.5.dp
+                                )
+                                Column {
+                                    Surface(
+                                        color = Gold500,
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "${storeSettings?.posBrandName?.ifBlank { "VIP POS" } ?: "VIP POS"} • ${storeSettings?.tagline?.ifBlank { "SMART | FAST | RELIABLE" } ?: "SMART | FAST | RELIABLE"}",
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 11.sp,
+                                            color = Navy900,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = storeSettings?.brandDescription?.ifBlank { "ALL-IN-ONE BUSINESS SOLUTION" } ?: "ALL-IN-ONE BUSINESS SOLUTION",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
+                        // Action shortcut row under banner
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Navy900)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "High-Speed Billing & Inventory",
+                                fontSize = 11.5.sp,
+                                color = Slate300,
+                                fontWeight = FontWeight.Medium
+                            )
+
+                            Button(
+                                onClick = { onNavigate("pos") },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Gold500,
+                                    contentColor = Navy900
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                                modifier = Modifier.height(32.dp).testTag("quick_pos_banner_btn")
+                            ) {
+                                Icon(Icons.Default.PointOfSale, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Open POS", fontSize = 11.sp, fontWeight = FontWeight.Black)
+                            }
+                        }
                     }
                 }
 

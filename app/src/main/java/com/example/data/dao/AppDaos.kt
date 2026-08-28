@@ -69,6 +69,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE isDeleted = 0 ORDER BY name ASC")
     fun getAllCustomersFlow(): Flow<List<Customer>>
 
+    @Query("SELECT * FROM customers WHERE isDeleted = 0 ORDER BY name ASC")
+    suspend fun getAllCustomers(): List<Customer>
+
     @Query("SELECT * FROM customers WHERE id = :id")
     suspend fun getCustomerById(id: Long): Customer?
 

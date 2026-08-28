@@ -46,9 +46,12 @@ data class HeldCart(
 data class CartItem(
     val product: Product,
     var quantity: Double = 1.0,
-    var unitPrice: Double = product.salePrice
+    var unitPrice: Double = product.salePrice,
+    var itemDiscount: Double = 0.0,
+    var customVariation: String = "",
+    var note: String = ""
 ) {
-    val totalPrice: Double get() = quantity * unitPrice
+    val totalPrice: Double get() = ((quantity * unitPrice) - itemDiscount).coerceAtLeast(0.0)
 }
 
 class StoreViewModel(application: Application) : AndroidViewModel(application) {
@@ -230,18 +233,75 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 _activeCashierName.value = defaultName
                 prefs.edit().putString("active_cashier_name", defaultName).apply()
             }
+
+            // Seed initial inventory for Paint, Building Materials & Hardware if empty
+            if (productDao.getAllProducts().isEmpty()) {
+                seedInitialStoreProducts()
+            }
+            if (customerDao.getAllCustomers().isEmpty()) {
+                seedInitialCustomers()
+            }
         }
     }
 
+    private suspend fun seedInitialStoreProducts() {
+        val sampleProducts = listOf(
+            Product(name = "Master Super Emulsion (Off-White #101)", category = "Paint", barcode = "8964000101", purchasePrice = 3200.0, salePrice = 3850.0, stockQuantity = 45.0, unit = "Gallon", description = "High-coverage interior emulsion paint"),
+            Product(name = "Dulux Velvet Touch (Soft Rose #204)", category = "Paint", barcode = "8964000204", purchasePrice = 4100.0, salePrice = 4950.0, stockQuantity = 28.0, unit = "Gallon", description = "Luxury velvet finish interior paint"),
+            Product(name = "Berger WeatherCoat Supreme (Pure White)", category = "Paint", barcode = "8964000300", purchasePrice = 15800.0, salePrice = 18500.0, stockQuantity = 12.0, unit = "Drum", description = "16 Litre exterior weather protection paint"),
+            Product(name = "Brighto Synthetic Enamel (Gloss Black #701)", category = "Paint", barcode = "8964000701", purchasePrice = 920.0, salePrice = 1150.0, stockQuantity = 60.0, unit = "Quarter", description = "0.91 Litre high gloss oil paint for metal and wood"),
+            Product(name = "Diamond Wall Primer (Water Based)", category = "Paint", barcode = "8964000400", purchasePrice = 1950.0, salePrice = 2400.0, stockQuantity = 35.0, unit = "Gallon", description = "Undercoat sealer for fresh plaster and drywall"),
+            Product(name = "Royal Matt Finish (Smoke Grey #505)", category = "Paint", barcode = "8964000505", purchasePrice = 3500.0, salePrice = 4200.0, stockQuantity = 18.0, unit = "Gallon", description = "Smooth non-reflective matt wall paint"),
+            Product(name = "Paint Thinner / Mineral Spirit Grade A", category = "Paint", barcode = "8964000601", purchasePrice = 360.0, salePrice = 480.0, stockQuantity = 95.0, unit = "Litre", description = "Virgin solvent thinner for enamel and clear coats"),
+            Product(name = "Paint Roller 9-Inch with Telescopic Handle", category = "Tools", barcode = "8964000801", purchasePrice = 480.0, salePrice = 650.0, stockQuantity = 50.0, unit = "Piece", description = "Heavy duty synthetic wool roller for smooth walls"),
+            Product(name = "Professional Paint Brush 3-Inch Bristle", category = "Tools", barcode = "8964000802", purchasePrice = 220.0, salePrice = 320.0, stockQuantity = 110.0, unit = "Piece", description = "High retention nylon-bristle painting brush"),
+            Product(name = "Falcon OPC Cement 50kg Bag", category = "Building Material", barcode = "8965000101", purchasePrice = 1300.0, salePrice = 1420.0, stockQuantity = 250.0, unit = "Bag", description = "Ordinary Portland Cement Grade 43"),
+            Product(name = "Fine Washed River Sand (50kg)", category = "Building Material", barcode = "8965000102", purchasePrice = 260.0, salePrice = 350.0, stockQuantity = 180.0, unit = "Bag", description = "Sifted clean construction sand for masonry plaster"),
+            Product(name = "G.I. Drywall Screws 1.5\" (Pack of 1000)", category = "Hardware", barcode = "8966000101", purchasePrice = 620.0, salePrice = 850.0, stockQuantity = 40.0, unit = "Box", description = "Black phosphate countersunk gypsum screws"),
+            Product(name = "Heavy Duty Stainless Steel Door Hinges 4\"", category = "Hardware", barcode = "8966000102", purchasePrice = 270.0, salePrice = 380.0, stockQuantity = 90.0, unit = "Piece", description = "Grade 304 ball-bearing butt hinges"),
+            Product(name = "Brass Cylinder Main Door Lock Set", category = "Hardware", barcode = "8966000103", purchasePrice = 2100.0, salePrice = 2850.0, stockQuantity = 22.0, unit = "Piece", description = "Double turn mortise lock with computer keys"),
+            Product(name = "Masonry Steel Drill Bit 10mm", category = "Tools", barcode = "8967000101", purchasePrice = 160.0, salePrice = 240.0, stockQuantity = 75.0, unit = "Piece", description = "Tungsten carbide tipped impact concrete drill bit"),
+            Product(name = "PPRC Hot & Cold Water Pipe 25mm (4m)", category = "Plumbing", barcode = "8968000101", purchasePrice = 490.0, salePrice = 650.0, stockQuantity = 85.0, unit = "Meter", description = "PN20 high pressure sanitary water supply pipe"),
+            Product(name = "Brass Ball Valve 1-Inch Heavy Body", category = "Plumbing", barcode = "8968000102", purchasePrice = 920.0, salePrice = 1250.0, stockQuantity = 30.0, unit = "Piece", description = "Full bore female threaded shut-off valve"),
+            Product(name = "Waterproof Silicon Sealant Clear (300ml)", category = "Hardware", barcode = "8966000104", purchasePrice = 410.0, salePrice = 580.0, stockQuantity = 45.0, unit = "Piece", description = "Anti-fungal acrylic silicone for glass and tiles"),
+            Product(name = "Copper Electrical Wire 3/29 90-Meter Coil", category = "Electrical", barcode = "8969000101", purchasePrice = 4100.0, salePrice = 4800.0, stockQuantity = 25.0, unit = "Roll", description = "99.9% pure copper insulated household cable"),
+            Product(name = "LED Surface Panel Light 18W Warm White", category = "Electrical", barcode = "8969000102", purchasePrice = 520.0, salePrice = 750.0, stockQuantity = 60.0, unit = "Piece", description = "Energy saving ceiling downlight 3000K")
+        )
+        sampleProducts.forEach { productDao.insertProduct(it) }
+    }
+
+    private suspend fun seedInitialCustomers() {
+        val sampleCustomers = listOf(
+            Customer(name = "Haji Rafiq Builders", phone = "03001234567", address = "Model Town Market", balance = 12500.0, notes = "Regular construction contractor"),
+            Customer(name = "Tariq Paint Contractor", phone = "03219876543", address = "Gulberg III", balance = 4200.0, notes = "Commercial painter"),
+            Customer(name = "Akram Construction Co", phone = "03335554433", address = "Canal Road Commercial Plaza", balance = 0.0, notes = "Architectural hardware client")
+        )
+        sampleCustomers.forEach { customerDao.insertCustomer(it) }
+    }
+
     // POS Cart Operations
-    fun addToCart(product: Product, quantity: Double = 1.0) {
+    fun setActiveCashier(cashierName: String) {
+        if (cashierName.isNotBlank()) {
+            _activeCashierName.value = cashierName.trim()
+            prefs.edit().putString("active_cashier_name", cashierName.trim()).apply()
+        }
+    }
+
+    fun addToCart(product: Product, quantity: Double = 1.0, variation: String = "") {
         val currentList = _cart.value.toMutableList()
-        val index = currentList.indexOfFirst { it.product.id == product.id }
+        val index = currentList.indexOfFirst { it.product.id == product.id && it.customVariation == variation }
         if (index >= 0) {
             val item = currentList[index]
             currentList[index] = item.copy(quantity = item.quantity + quantity)
         } else {
-            currentList.add(CartItem(product = product, quantity = quantity, unitPrice = product.salePrice))
+            currentList.add(
+                CartItem(
+                    product = product,
+                    quantity = quantity,
+                    unitPrice = product.salePrice,
+                    customVariation = variation
+                )
+            )
         }
         _cart.value = currentList
     }
@@ -256,6 +316,92 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         if (index >= 0) {
             currentList[index] = currentList[index].copy(quantity = quantity)
             _cart.value = currentList
+        }
+    }
+
+    fun updateCartItemPrice(productId: Long, newUnitPrice: Double) {
+        val currentList = _cart.value.toMutableList()
+        val index = currentList.indexOfFirst { it.product.id == productId }
+        if (index >= 0) {
+            currentList[index] = currentList[index].copy(unitPrice = newUnitPrice.coerceAtLeast(0.0))
+            _cart.value = currentList
+        }
+    }
+
+    fun updateCartItemDiscount(productId: Long, discount: Double) {
+        val currentList = _cart.value.toMutableList()
+        val index = currentList.indexOfFirst { it.product.id == productId }
+        if (index >= 0) {
+            currentList[index] = currentList[index].copy(itemDiscount = discount.coerceAtLeast(0.0))
+            _cart.value = currentList
+        }
+    }
+
+    fun updateCartItemFull(
+        productId: Long,
+        quantity: Double,
+        unitPrice: Double,
+        itemDiscount: Double = 0.0,
+        customVariation: String = "",
+        note: String = ""
+    ) {
+        if (quantity <= 0) {
+            removeFromCart(productId)
+            return
+        }
+        val currentList = _cart.value.toMutableList()
+        val index = currentList.indexOfFirst { it.product.id == productId }
+        if (index >= 0) {
+            currentList[index] = currentList[index].copy(
+                quantity = quantity,
+                unitPrice = unitPrice.coerceAtLeast(0.0),
+                itemDiscount = itemDiscount.coerceAtLeast(0.0),
+                customVariation = customVariation,
+                note = note
+            )
+            _cart.value = currentList
+        }
+    }
+
+    fun addCustomItemToCart(
+        name: String,
+        price: Double,
+        quantity: Double = 1.0,
+        unit: String = "Pcs",
+        category: String = "Custom Item"
+    ) {
+        val customProduct = Product(
+            id = -System.currentTimeMillis(),
+            name = name.ifBlank { "Custom POS Item" },
+            category = category,
+            salePrice = price.coerceAtLeast(0.0),
+            purchasePrice = price.coerceAtLeast(0.0),
+            stockQuantity = 999.0,
+            unit = unit
+        )
+        addToCart(customProduct, quantity)
+    }
+
+    fun quickAddCustomer(
+        name: String,
+        phone: String = "",
+        address: String = "",
+        onSuccess: (Customer) -> Unit = {}
+    ) {
+        if (name.isBlank()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val newCustomer = Customer(
+                name = name.trim(),
+                phone = phone.trim(),
+                address = address.trim(),
+                balance = 0.0
+            )
+            val generatedId = customerDao.insertCustomer(newCustomer)
+            val savedCustomer = newCustomer.copy(id = generatedId)
+            launch(Dispatchers.Main) {
+                _selectedCustomer.value = savedCustomer
+                onSuccess(savedCustomer)
+            }
         }
     }
 
@@ -359,10 +505,11 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val saleId = saleDao.insertSale(sale)
 
             val saleItems = currentCart.map {
+                val resolvedName = if (it.customVariation.isNotBlank()) "${it.product.name} [${it.customVariation}]" else it.product.name
                 SaleItem(
                     saleId = saleId,
                     productId = it.product.id,
-                    productName = it.product.name,
+                    productName = resolvedName,
                     quantity = it.quantity,
                     unit = it.product.unit,
                     purchasePrice = it.product.purchasePrice,

@@ -144,20 +144,31 @@ object PdfGenerator {
             isAntiAlias = true
         }
 
-        var y = 45f
+        var y = 42f
 
-        // 1. Top Store Header
-        canvas.drawText(invoice.header.storeName, 40f, y, titlePaint)
-        y += 16f
-        canvas.drawText("Wholesale & Retail Sanitary Hardware Store", 40f, y, mutedPaint)
-        y += 13f
+        // 1. Top Store Header with Custom/Default Logo
+        try {
+            val logoBitmap = BrandingImageHelper.getLogoBitmap(context, invoice.header.logoUri)
+            val logoRect = RectF(40f, 32f, 82f, 74f)
+            canvas.drawBitmap(logoBitmap, null, logoRect, basePaint)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        val textStartX = 92f
+        canvas.drawText(invoice.header.storeName, textStartX, y, titlePaint)
+        y += 15f
+        if (invoice.header.tagline.isNotBlank()) {
+            canvas.drawText(invoice.header.tagline, textStartX, y, mutedPaint)
+            y += 12f
+        }
         if (invoice.header.phone.isNotBlank()) {
-            canvas.drawText("Phone / WhatsApp: ${invoice.header.phone}", 40f, y, mutedPaint)
-            y += 13f
+            canvas.drawText("Phone / WhatsApp: ${invoice.header.phone}", textStartX, y, mutedPaint)
+            y += 12f
         }
         if (invoice.header.address.isNotBlank()) {
-            canvas.drawText("Address: ${invoice.header.address}", 40f, y, mutedPaint)
-            y += 13f
+            canvas.drawText("Address: ${invoice.header.address}", textStartX, y, mutedPaint)
+            y += 12f
         }
 
         // TAX INVOICE Badge (Top Right)
@@ -183,7 +194,7 @@ object PdfGenerator {
 
         // Meta Column
         canvas.drawText("Invoice #: ${invoice.meta.invoiceNumber}", 350f, y + 10f, basePaint)
-        canvas.drawText("Date: ${invoice.meta.formattedDate}", 350f, y + 24f, basePaint)
+        canvas.drawText("Date: ${invoice.meta.saleDate.ifBlank { invoice.meta.formattedDate }}  |  Time: ${invoice.meta.saleTime}", 350f, y + 24f, basePaint)
         canvas.drawText("Payment: ${invoice.meta.paymentType}  |  Cashier: ${invoice.meta.cashierName}", 350f, y + 38f, basePaint)
 
         y += 72f
@@ -354,18 +365,33 @@ object PdfGenerator {
         val centerX = width / 2f
         val margin = 10f
         val rightMargin = width - 10f
-        var y = 25f
+        var y = 16f
+
+        // Draw Store Logo if available
+        try {
+            val logoBitmap = BrandingImageHelper.getLogoBitmap(context, invoice.header.logoUri)
+            val logoSize = 34f
+            val logoRect = RectF(centerX - (logoSize / 2), y, centerX + (logoSize / 2), y + logoSize)
+            canvas.drawBitmap(logoBitmap, null, logoRect, textLeft)
+            y += logoSize + 8f
+        } catch (e: Exception) {
+            y = 25f
+        }
 
         // Store Header
         canvas.drawText(invoice.header.storeName, centerX, y, boldCenter)
         y += 14f
+        if (invoice.header.tagline.isNotBlank()) {
+            canvas.drawText(invoice.header.tagline, centerX, y, textCenter)
+            y += 11f
+        }
         if (invoice.header.phone.isNotBlank()) {
             canvas.drawText("Tel: ${invoice.header.phone}", centerX, y, textCenter)
-            y += 12f
+            y += 11f
         }
         if (invoice.header.address.isNotBlank()) {
             canvas.drawText(invoice.header.address, centerX, y, textCenter)
-            y += 12f
+            y += 11f
         }
 
         y += 4f
@@ -374,12 +400,15 @@ object PdfGenerator {
 
         // Details
         canvas.drawText("Inv: ${invoice.meta.invoiceNumber}", margin, y, textLeft)
-        canvas.drawText(invoice.meta.formattedDate, rightMargin, y, textRight)
+        canvas.drawText("Date: ${invoice.meta.saleDate.ifBlank { invoice.meta.formattedDate }}", rightMargin, y, textRight)
         y += 12f
         canvas.drawText("Cust: ${invoice.customer.name}", margin, y, textLeft)
-        canvas.drawText("Pay: ${invoice.meta.paymentType}", rightMargin, y, textRight)
-        y += 12f
+        if (invoice.meta.saleTime.isNotBlank()) {
+            canvas.drawText("Time: ${invoice.meta.saleTime}", rightMargin, y, textRight)
+            y += 12f
+        }
         canvas.drawText("Cashier: ${invoice.meta.cashierName}", margin, y, textLeft)
+        canvas.drawText("Pay: ${invoice.meta.paymentType}", rightMargin, y, textRight)
         y += 14f
 
         canvas.drawLine(margin, y, rightMargin, y, linePaint)

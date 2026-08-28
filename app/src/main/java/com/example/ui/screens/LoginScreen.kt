@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
 import com.example.util.BiometricPromptHelper
@@ -29,6 +30,7 @@ fun LoginScreen(
     onLoginSuccess: () -> Unit
 ) {
     val context = LocalContext.current
+    val storeSettings by viewModel.storeSettings.collectAsState()
     val isBiometricEnabled by viewModel.isBiometricAuthEnabled.collectAsState()
     val (isBioAvailable, bioStatusMsg) = remember(context) { BiometricPromptHelper.isBiometricAvailable(context) }
 
@@ -58,29 +60,24 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Surface(
-                    color = Navy900,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Storefront,
-                        contentDescription = null,
-                        tint = Gold500,
-                        modifier = Modifier
-                            .padding(12.dp)
-                            .size(36.dp)
-                    )
-                }
+                ShopLogoAvatar(
+                    logoUri = storeSettings?.logoUri,
+                    size = 64.dp,
+                    shape = RoundedCornerShape(14.dp),
+                    borderColor = Gold500,
+                    borderWidth = 2.dp
+                )
 
                 Text(
-                    text = "CH UMER POS",
+                    text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "VIP POS",
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = Navy900
                 )
                 Text(
-                    text = "Enterprise POS • 03080018035",
+                    text = storeSettings?.tagline?.ifBlank { "SMART | FAST | RELIABLE" } ?: "SMART | FAST | RELIABLE",
                     fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
                     color = Navy500
                 )
 
