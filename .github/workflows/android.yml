@@ -30,8 +30,11 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      - name: Clean
-        run: ./gradlew clean --no-build-cache --stacktrace
+      - name: Ensure Environment Configuration
+        run: |
+          if [ ! -f .env ] && [ -f .env.example ]; then
+            cp .env.example .env
+          fi
 
       - name: Run Unit Tests
         run: ./gradlew :app:testDebugUnitTest --no-build-cache --stacktrace
@@ -47,19 +50,25 @@ jobs:
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: CH-UMER-POS-Debug-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
 
       - name: Upload Release APK Artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: CH-UMER-POS-Release-APK
           path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: warn
 
       - name: Upload Release AAB Bundle Artifact
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: CH-UMER-POS-Release-AAB
-          path: app/build/outputs/bundle/release/app-release.aab
+          path: app/build/outputs/bundle/release/*.aab
+          if-no-files-found: warn
 
