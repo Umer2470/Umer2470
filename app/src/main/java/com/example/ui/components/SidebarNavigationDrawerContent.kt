@@ -482,13 +482,13 @@ fun SidebarNavigationDrawerContent(
                     )
                     Column {
                         Text(
-                            text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "CH UMER POS",
+                            text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "SENTRY STORE",
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 15.sp,
                             color = Color.White
                         )
                         Text(
-                            text = storeSettings?.tagline?.ifBlank { "Tel: ${storeSettings?.phone ?: "03080018035"}" } ?: "SMART | FAST | RELIABLE",
+                            text = storeSettings?.tagline?.ifBlank { "Tel: ${storeSettings?.phone ?: "03080018035"}" } ?: "Professional Retail & Business Management",
                             fontSize = 11.5.sp,
                             fontWeight = FontWeight.Medium,
                             color = Gold400

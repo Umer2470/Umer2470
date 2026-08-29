@@ -66,8 +66,8 @@ fun ShopLogoAvatar(
         )
     } else {
         Image(
-            painter = painterResource(id = R.drawable.img_vip_pos_logo),
-            contentDescription = "Brand Logo",
+            painter = painterResource(id = R.drawable.sentry_store_logo_1787989266987),
+            contentDescription = "SENTRY STORE Brand Logo",
             contentScale = ContentScale.Crop,
             modifier = modifier
                 .size(size)

@@ -382,6 +382,21 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         addToCart(customProduct, quantity)
     }
 
+    fun addProductByBarcode(barcode: String, onResult: (Boolean, Product?) -> Unit = { _, _ -> }) {
+        val code = barcode.trim()
+        if (code.isBlank()) {
+            onResult(false, null)
+            return
+        }
+        val product = products.value.firstOrNull { it.barcode.equals(code, ignoreCase = true) }
+        if (product != null) {
+            addToCart(product, 1.0)
+            onResult(true, product)
+        } else {
+            onResult(false, null)
+        }
+    }
+
     fun quickAddCustomer(
         name: String,
         phone: String = "",

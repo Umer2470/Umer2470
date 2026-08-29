@@ -32,10 +32,10 @@ fun BusinessSetupWizardScreen(
     val businessProfile by viewModel.businessProfile.collectAsState()
 
     var businessName by remember(storeSettings, businessProfile) {
-        mutableStateOf(businessProfile?.businessName ?: storeSettings?.storeName ?: "CH UMER POS.03080018035")
+        mutableStateOf(businessProfile?.businessName ?: storeSettings?.storeName ?: "SENTRY STORE")
     }
     var tagline by remember(businessProfile) {
-        mutableStateOf(businessProfile?.tagline ?: "Smart Retail & Sanitary Wholesale POS")
+        mutableStateOf(businessProfile?.tagline ?: "Professional Retail & Business Management")
     }
     var ownerName by remember(storeSettings) {
         mutableStateOf(storeSettings?.ownerName ?: "CH UMER")
@@ -62,7 +62,7 @@ fun BusinessSetupWizardScreen(
         mutableStateOf(storeSettings?.currencySymbol ?: "Rs")
     }
     var footerText by remember(storeSettings) {
-        mutableStateOf(storeSettings?.invoiceFooterText ?: "Thank you for shopping with us! No return without receipt.")
+        mutableStateOf(storeSettings?.invoiceFooterText ?: "Thank you for shopping with SENTRY STORE! No return without receipt.")
     }
 
     var showSuccessToast by remember { mutableStateOf(false) }

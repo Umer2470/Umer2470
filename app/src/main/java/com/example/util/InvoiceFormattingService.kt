@@ -19,8 +19,8 @@ data class PrintableInvoice(
 
 data class InvoiceHeader(
     val storeName: String,
-    val posBrandName: String = "VIP POS",
-    val tagline: String = "SMART | FAST | RELIABLE",
+    val posBrandName: String = "SENTRY STORE POS",
+    val tagline: String = "Professional Retail & Business Management",
     val logoUri: String? = null,
     val ownerName: String,
     val phone: String,
@@ -107,9 +107,9 @@ object InvoiceFormattingService {
 
         return PrintableInvoice(
             header = InvoiceHeader(
-                storeName = settings.storeName.ifBlank { "CH UMER POS.03080018035" },
-                posBrandName = settings.posBrandName.ifBlank { "VIP POS" },
-                tagline = settings.tagline.ifBlank { "SMART | FAST | RELIABLE" },
+                storeName = settings.storeName.ifBlank { "SENTRY STORE" },
+                posBrandName = settings.posBrandName.ifBlank { "SENTRY STORE POS" },
+                tagline = settings.tagline.ifBlank { "Professional Retail & Business Management" },
                 logoUri = settings.logoUri,
                 ownerName = settings.ownerName,
                 phone = settings.phone,

@@ -124,14 +124,14 @@ fun DashboardScreen(
                             )
                             Column {
                                 Text(
-                                    text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "CH UMER POS.03080018035",
+                                    text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "SENTRY STORE",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = (storeSettings?.tagline ?: "SMART | FAST | RELIABLE") + " • ",
+                                        text = (storeSettings?.tagline ?: "Professional Retail & Business Management") + " • ",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = Gold400
                                     )
@@ -246,8 +246,8 @@ fun DashboardScreen(
                                 .height(160.dp)
                         ) {
                             Image(
-                                painter = painterResource(id = R.drawable.img_vip_pos_branding),
-                                contentDescription = "VIP POS Commercial Solution",
+                                painter = painterResource(id = R.drawable.sentry_store_banner_1787989285469),
+                                contentDescription = "SENTRY STORE Commercial Solution",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -288,7 +288,7 @@ fun DashboardScreen(
                                         shape = RoundedCornerShape(6.dp)
                                     ) {
                                         Text(
-                                            text = "${storeSettings?.posBrandName?.ifBlank { "VIP POS" } ?: "VIP POS"} • ${storeSettings?.tagline?.ifBlank { "SMART | FAST | RELIABLE" } ?: "SMART | FAST | RELIABLE"}",
+                                            text = "${storeSettings?.posBrandName?.ifBlank { "SENTRY STORE POS" } ?: "SENTRY STORE POS"} • ${storeSettings?.tagline?.ifBlank { "Professional Retail" } ?: "Professional Retail"}",
                                             fontWeight = FontWeight.Black,
                                             fontSize = 11.sp,
                                             color = Navy900,
@@ -297,7 +297,7 @@ fun DashboardScreen(
                                     }
                                     Spacer(modifier = Modifier.height(3.dp))
                                     Text(
-                                        text = storeSettings?.brandDescription?.ifBlank { "ALL-IN-ONE BUSINESS SOLUTION" } ?: "ALL-IN-ONE BUSINESS SOLUTION",
+                                        text = storeSettings?.brandDescription?.ifBlank { "Hardware, Paint & Multi-Category Retail POS" } ?: "Hardware, Paint & Multi-Category Retail POS",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White

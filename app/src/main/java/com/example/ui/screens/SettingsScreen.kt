@@ -57,19 +57,19 @@ fun SettingsScreen(
     var biometricTestMessage by remember { mutableStateOf<String?>(null) }
     var isBiometricTestSuccess by remember { mutableStateOf(false) }
 
-    var appDisplayName by remember(storeSettings) { mutableStateOf(storeSettings?.appDisplayName ?: "VIP POS") }
-    var posBrandName by remember(storeSettings) { mutableStateOf(storeSettings?.posBrandName ?: "VIP POS") }
-    var tagline by remember(storeSettings) { mutableStateOf(storeSettings?.tagline ?: "SMART | FAST | RELIABLE") }
-    var brandDescription by remember(storeSettings) { mutableStateOf(storeSettings?.brandDescription ?: "ALL-IN-ONE BUSINESS SOLUTION") }
+    var appDisplayName by remember(storeSettings) { mutableStateOf(storeSettings?.appDisplayName ?: "SENTRY STORE") }
+    var posBrandName by remember(storeSettings) { mutableStateOf(storeSettings?.posBrandName ?: "SENTRY STORE POS") }
+    var tagline by remember(storeSettings) { mutableStateOf(storeSettings?.tagline ?: "Professional Retail & Business Management") }
+    var brandDescription by remember(storeSettings) { mutableStateOf(storeSettings?.brandDescription ?: "Hardware, Paint & Multi-Category Retail POS") }
     var customLogoUri by remember(storeSettings) { mutableStateOf(storeSettings?.logoUri) }
 
-    var storeName by remember(storeSettings) { mutableStateOf(storeSettings?.storeName ?: "CH UMER POS.03080018035") }
+    var storeName by remember(storeSettings) { mutableStateOf(storeSettings?.storeName ?: "SENTRY STORE") }
     var ownerName by remember(storeSettings) { mutableStateOf(storeSettings?.ownerName ?: "CH UMER") }
     var phone by remember(storeSettings) { mutableStateOf(storeSettings?.phone ?: "03080018035") }
     var address by remember(storeSettings) { mutableStateOf(storeSettings?.address ?: "Main Market, Store #1") }
     var currency by remember(storeSettings) { mutableStateOf(storeSettings?.currencySymbol ?: "Rs") }
     var taxRate by remember(storeSettings) { mutableStateOf((storeSettings?.taxRatePercent ?: 0.0).toString()) }
-    var footerText by remember(storeSettings) { mutableStateOf(storeSettings?.invoiceFooterText ?: "Thank you for shopping with us! No return without receipt.") }
+    var footerText by remember(storeSettings) { mutableStateOf(storeSettings?.invoiceFooterText ?: "Thank you for shopping with SENTRY STORE! No return without receipt.") }
     var paperWidth by remember(storeSettings) { mutableStateOf(storeSettings?.paperWidthMm ?: 80) }
     var soundEnabled by remember(storeSettings) { mutableStateOf(storeSettings?.enableSoundEffects ?: true) }
     var backupEnabled by remember(storeSettings) { mutableStateOf(storeSettings?.enableCloudBackup ?: true) }
@@ -389,7 +389,7 @@ fun SettingsScreen(
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = if (customLogoUri != null) "✓ Custom Brand Logo Active" else "Default VIP POS Logo Active",
+                                    text = if (customLogoUri != null) "✓ Custom Brand Logo Active" else "Default SENTRY STORE Logo Active",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (customLogoUri != null) Emerald800 else Navy900,
@@ -441,7 +441,7 @@ fun SettingsScreen(
                         value = appDisplayName,
                         onValueChange = { appDisplayName = it },
                         label = { Text("Application Display Name") },
-                        placeholder = { Text("e.g. CH UMER SENTRY STORE or VIP POS") },
+                        placeholder = { Text("e.g. SENTRY STORE") },
                         supportingText = { Text("Appears on top app bars, navigation drawer, and home banner") },
                         modifier = Modifier.fillMaxWidth().testTag("input_app_display_name")
                     )
@@ -454,7 +454,7 @@ fun SettingsScreen(
                             value = posBrandName,
                             onValueChange = { posBrandName = it },
                             label = { Text("POS Brand / Badge Name") },
-                            placeholder = { Text("e.g. VIP POS") },
+                            placeholder = { Text("e.g. SENTRY STORE POS") },
                             supportingText = { Text("Appears on POS badges & terminal") },
                             modifier = Modifier.weight(1f).testTag("input_pos_brand_name")
                         )
@@ -463,7 +463,7 @@ fun SettingsScreen(
                             value = tagline,
                             onValueChange = { tagline = it },
                             label = { Text("Tagline / Subtitle") },
-                            placeholder = { Text("e.g. SMART | FAST | RELIABLE") },
+                            placeholder = { Text("e.g. Professional Retail & Business Management") },
                             supportingText = { Text("Appears under logo & invoices") },
                             modifier = Modifier.weight(1f).testTag("input_tagline")
                         )
@@ -473,7 +473,7 @@ fun SettingsScreen(
                         value = brandDescription,
                         onValueChange = { brandDescription = it },
                         label = { Text("Brand Description / Headline") },
-                        placeholder = { Text("e.g. ALL-IN-ONE BUSINESS SOLUTION") },
+                        placeholder = { Text("e.g. Hardware, Paint & Multi-Category Retail POS") },
                         supportingText = { Text("Appears on dashboard showcase banner") },
                         modifier = Modifier.fillMaxWidth().testTag("input_brand_description")
                     )
@@ -514,13 +514,13 @@ fun SettingsScreen(
 
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = appDisplayName.ifBlank { "CH UMER POS" },
+                                        text = appDisplayName.ifBlank { "SENTRY STORE" },
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 15.sp,
                                         color = Color.White
                                     )
                                     Text(
-                                        text = tagline.ifBlank { "SMART | FAST | RELIABLE" },
+                                        text = tagline.ifBlank { "Professional Retail & Business Management" },
                                         fontSize = 11.5.sp,
                                         color = Gold400,
                                         fontWeight = FontWeight.Medium
@@ -532,7 +532,7 @@ fun SettingsScreen(
                                     shape = RoundedCornerShape(6.dp)
                                 ) {
                                     Text(
-                                        text = posBrandName.ifBlank { "VIP POS" },
+                                        text = posBrandName.ifBlank { "SENTRY STORE POS" },
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Black,
                                         color = Navy900,
@@ -552,7 +552,7 @@ fun SettingsScreen(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Text(
-                                        text = brandDescription.ifBlank { "ALL-IN-ONE BUSINESS SOLUTION" },
+                                        text = brandDescription.ifBlank { "Hardware, Paint & Multi-Category Retail POS" },
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Slate300

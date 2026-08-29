@@ -32,6 +32,7 @@ import com.example.data.entity.Customer
 import com.example.data.entity.Product
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
+import com.example.ui.components.CameraBarcodeScannerDialog
 import com.example.ui.components.LiveClockHeaderWidget
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.components.StatusBadge
@@ -79,6 +80,7 @@ fun SalesPosScreen(
     var viewMode by remember { mutableStateOf(PosViewMode.GRID) }
 
     // Dialog state controllers
+    var showCameraScannerDialog by remember { mutableStateOf(false) }
     var showCheckoutDialog by remember { mutableStateOf(false) }
     var showReceiptDialog by remember { mutableStateOf(false) }
     var showCustomerDialog by remember { mutableStateOf(false) }
@@ -130,6 +132,22 @@ fun SalesPosScreen(
                     p.category.contains(searchQuery, ignoreCase = true)
             matchesCategory && matchesQuery
         }
+    }
+
+    // Camera Barcode Scanner Dialog
+    if (showCameraScannerDialog) {
+        CameraBarcodeScannerDialog(
+            products = products,
+            currencySymbol = currency,
+            onProductScanned = { scannedProduct ->
+                viewModel.addToCart(scannedProduct)
+                successToast = "+1 '${scannedProduct.name}' added to cart"
+            },
+            onBarcodeNotFound = { code ->
+                errorMessage = "Barcode '$code' was not found in catalog"
+            },
+            onDismiss = { showCameraScannerDialog = false }
+        )
     }
 
     // Receipt Dialog
@@ -1126,11 +1144,37 @@ fun SalesPosScreen(
                             }
                         }
 
-                        // Right: Live Clock & Offline Badge
+                        // Right: Camera Scanner, Live Clock & Offline Badge
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
+                            Surface(
+                                onClick = { showCameraScannerDialog = true },
+                                color = Gold500,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.testTag("btn_top_bar_camera_scanner")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.QrCodeScanner,
+                                        contentDescription = "Scan Barcode",
+                                        tint = Navy900,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Scan",
+                                        color = Navy900,
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 11.5.sp
+                                    )
+                                }
+                            }
+
                             LiveClockHeaderWidget(showSeconds = true)
 
                             Surface(
@@ -1479,10 +1523,10 @@ fun SalesPosScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Search Product & Barcode Area
+            // Search Product & Barcode Area with Direct Camera Barcode Scan button
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedTextField(
@@ -1493,7 +1537,7 @@ fun SalesPosScreen(
                             currentTab = PosTab.CATALOG
                         }
                     },
-                    placeholder = { Text("Search paint, hardware, building materials or scan barcode...", fontSize = 12.sp) },
+                    placeholder = { Text("Search paint, hardware or scan barcode...", fontSize = 12.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Navy500, modifier = Modifier.size(18.dp)) },
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
@@ -1510,9 +1554,34 @@ fun SalesPosScreen(
                         focusedContainerColor = Color.White
                     ),
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .weight(1f)
                         .testTag("pos_search_input")
                 )
+
+                Button(
+                    onClick = { showCameraScannerDialog = true },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Navy900,
+                        contentColor = Gold500
+                    ),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                    modifier = Modifier
+                        .height(52.dp)
+                        .testTag("btn_open_camera_barcode_scanner")
+                ) {
+                    Icon(
+                        Icons.Default.QrCodeScanner,
+                        contentDescription = "Scan Barcode",
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Scan",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))
