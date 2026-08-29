@@ -35,8 +35,6 @@ sealed class Screen(val route: String) {
     object AccessManagement : Screen("access_management")
     object Setup : Screen("setup")
     object Activation : Screen("activation")
-    object DevPanel : Screen("dev_panel")
-    object MasterSaas : Screen("master_saas")
     object RecycleBin : Screen("recycle_bin")
     object Logs : Screen("logs")
     object Settings : Screen("settings")
@@ -168,18 +166,6 @@ fun AppNavigation(
             }
             composable(Screen.Activation.route) {
                 CustomerActivationScreen(
-                    viewModel = viewModel,
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-            composable(Screen.DevPanel.route) {
-                DeveloperPanelScreen(
-                    viewModel = viewModel,
-                    onNavigateBack = { navController.popBackStack() }
-                )
-            }
-            composable(Screen.MasterSaas.route) {
-                MasterOwnerSaaSControlScreen(
                     viewModel = viewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )

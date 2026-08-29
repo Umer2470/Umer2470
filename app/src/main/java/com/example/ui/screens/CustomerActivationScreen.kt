@@ -200,17 +200,36 @@ fun CustomerActivationScreen(
                 }
             }
 
-            if (isActivated) {
-                OutlinedButton(
-                    onClick = {
-                        viewModel.resetAppActivation()
-                        statusMessage = "Activation state reset."
-                        isSuccessStatus = false
-                    },
-                    modifier = Modifier.fillMaxWidth().testTag("reset_activation_button"),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Rose600)
+            // Customer License Support Info
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Slate100)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Reset Activation State")
+                    Icon(
+                        imageVector = Icons.Default.HeadsetMic,
+                        contentDescription = "Customer Support",
+                        tint = Navy700,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Commercial License Support",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp,
+                            color = Navy900
+                        )
+                        Text(
+                            text = "For store activation assistance, reach official support at 03080018035.",
+                            fontSize = 11.sp,
+                            color = Navy600
+                        )
+                    }
                 }
             }
         }

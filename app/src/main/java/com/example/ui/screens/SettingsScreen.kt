@@ -899,8 +899,6 @@ fun SettingsScreen(
                 Triple("Store Access & Roles", "Role permissions & security rules", "access_management"),
                 Triple("Business Profile Setup", "Store name, address, receipt headers", "setup"),
                 Triple("Device Activation", "Commercial license key status", "activation"),
-                Triple("SaaS Master Control", "Tenant quotas, stores, license generator", "master_saas"),
-                Triple("Developer & API Panel", "Server diagnostics & health checks", "dev_panel"),
                 Triple("Staff & Users", "Manage operators and PINs", "users"),
                 Triple("Recycle Bin", "Restore or permanently delete items", "recycle_bin"),
                 Triple("Audit Activity Logs", "Inspect recent terminal actions", "logs")

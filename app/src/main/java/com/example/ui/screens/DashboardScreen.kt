@@ -81,8 +81,8 @@ fun DashboardScreen(
         QuickActionItem("Reports", Icons.Default.Assessment, Rose600, "reports"),
         QuickActionItem("Attendance", Icons.Default.Badge, Emerald500, "attendance"),
         QuickActionItem("Daily Closing", Icons.Default.LockClock, Navy800, "closing"),
-        QuickActionItem("SaaS Master", Icons.Default.AdminPanelSettings, Gold500, "master_saas"),
-        QuickActionItem("Dev Panel", Icons.Default.DeveloperMode, Navy700, "dev_panel"),
+        QuickActionItem("Staff & Users", Icons.Default.ManageAccounts, Purple600, "users"),
+        QuickActionItem("Settings", Icons.Default.Settings, Teal600, "settings"),
         QuickActionItem("Activation", Icons.Default.VpnKey, Blue600, "activation")
     )
 

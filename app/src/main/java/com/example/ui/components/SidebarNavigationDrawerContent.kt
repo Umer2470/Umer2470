@@ -336,36 +336,12 @@ fun SidebarNavigationDrawerContent(
                     minRole = "ADMIN"
                 ),
                 NavChildItem(
-                    title = "Admin Management",
-                    subtitle = "Administrative privileges & accounts",
-                    icon = Icons.Default.SupervisorAccount,
-                    route = "users",
-                    testTag = "drawer_item_admin_management",
-                    minRole = "ADMIN"
-                ),
-                NavChildItem(
-                    title = "Super Admin Controls",
-                    subtitle = "Master system authority & database controls",
-                    icon = Icons.Default.Shield,
-                    route = "master_saas",
-                    testTag = "drawer_item_super_admin_controls",
-                    minRole = "SUPER_ADMIN"
-                ),
-                NavChildItem(
                     title = "Permissions & Access Control",
                     subtitle = "Granular role access policy matrix",
                     icon = Icons.Default.LockOpen,
                     route = "access_management",
                     testTag = "drawer_item_permissions_access",
                     minRole = "ADMIN"
-                ),
-                NavChildItem(
-                    title = "SaaS Master Control",
-                    subtitle = "Store activation & instance locks",
-                    icon = Icons.Default.AdminPanelSettings,
-                    route = "master_saas",
-                    testTag = "drawer_item_saas_master",
-                    minRole = "SUPER_ADMIN"
                 ),
                 NavChildItem(
                     title = "License Activation",
@@ -390,14 +366,6 @@ fun SidebarNavigationDrawerContent(
                     route = "recycle_bin",
                     testTag = "drawer_item_recycle_bin",
                     minRole = "ADMIN"
-                ),
-                NavChildItem(
-                    title = "Developer & Diagnostics",
-                    subtitle = "Room DB integrity & device logs",
-                    icon = Icons.Default.DeveloperMode,
-                    route = "dev_panel",
-                    testTag = "drawer_item_dev_panel",
-                    minRole = "SUPER_ADMIN"
                 )
             )
         ),

@@ -275,14 +275,14 @@ class SyncManager private constructor(private val context: Context) {
                 // Ping server
                 val health = devRepository.checkHealth()
                 if (health !is ApiResult.Success) {
-                    addLog("Cloud Backup", "Cloud backup deferred: Developer Server unreachable.", SyncLogLevel.WARNING)
+                    addLog("Cloud Backup", "Cloud backup deferred: Remote server unreachable. Local records safe.", SyncLogLevel.WARNING)
                     return@withContext false
                 }
 
                 val now = System.currentTimeMillis()
                 _lastCloudBackupTimestamp.value = now
                 prefs.edit().putLong(KEY_LAST_CLOUD_BACKUP_TS, now).apply()
-                addLog("Cloud Backup", "Encrypted POS Snapshot successfully backed up to Developer Cloud (${backupDataJson.length} bytes).", SyncLogLevel.SUCCESS)
+                addLog("Cloud Backup", "Encrypted POS snapshot successfully backed up to Secure Cloud.", SyncLogLevel.SUCCESS)
                 true
             } catch (e: Exception) {
                 addLog("Cloud Backup", "Cloud backup failed: ${e.message}", SyncLogLevel.ERROR)

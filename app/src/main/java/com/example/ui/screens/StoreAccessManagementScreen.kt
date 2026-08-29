@@ -39,7 +39,7 @@ fun StoreAccessManagementScreen(
         Pair("Staff Attendance Tracking", listOf("SUPER_ADMIN", "ADMIN", "CASHIER", "EMPLOYEE")),
         Pair("Database & Settings Config", listOf("SUPER_ADMIN", "ADMIN")),
         Pair("Device License Activation", listOf("SUPER_ADMIN", "ADMIN")),
-        Pair("SaaS Multi-Tenant Management", listOf("SUPER_ADMIN"))
+        Pair("Store Outlets & Branch Management", listOf("SUPER_ADMIN", "ADMIN"))
     )
 
     Scaffold(

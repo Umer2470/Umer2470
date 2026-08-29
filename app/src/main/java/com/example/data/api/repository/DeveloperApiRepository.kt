@@ -194,16 +194,16 @@ class DeveloperApiRepository(private val context: Context) {
             // Detect HTML responses (Cloud Run fallback, Nginx error pages, Web UI index.html)
             if (trimmed.startsWith("<") || trimmed.contains("<!DOCTYPE html", ignoreCase = true) || trimmed.contains("<html", ignoreCase = true)) {
                 val htmlError = when (statusCode) {
-                    404 -> "Activation endpoint not found on server (HTTP 404). Please verify API Base URL."
-                    in 500..599 -> "Developer server error (HTTP $statusCode). Server may be undergoing maintenance."
-                    else -> "Server returned an HTML web page instead of API JSON (HTTP $statusCode). Please check Developer Server URL."
+                    404 -> "Activation service is currently unavailable (HTTP 404)."
+                    in 500..599 -> "Licensing server is undergoing maintenance (HTTP $statusCode). Please try again later."
+                    else -> "Unable to reach licensing service (HTTP $statusCode). Please check your internet connection."
                 }
                 return ApiResult.Error(code = statusCode, message = htmlError)
             }
 
             // Verify if payload looks like JSON
             if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-                return ApiResult.Error(code = statusCode, message = "Server returned non-JSON response: '$trimmed' (HTTP $statusCode)")
+                return ApiResult.Error(code = statusCode, message = "Unexpected response from licensing service. Please try again.")
             }
 
             // Attempt Moshi parsing safely
@@ -245,13 +245,13 @@ class DeveloperApiRepository(private val context: Context) {
         } catch (e: ConnectException) {
             ApiResult.Error(
                 code = -1,
-                message = "Failed to connect to developer server. Server may be down or unreachable.",
+                message = "Failed to connect to license service. Server may be temporarily unreachable.",
                 isNetworkError = true
             )
         } catch (e: SSLException) {
             ApiResult.Error(
                 code = -1,
-                message = "Secure SSL handshake with developer server failed.",
+                message = "Secure SSL handshake with licensing server failed.",
                 isNetworkError = true
             )
         } catch (e: EOFException) {
@@ -277,18 +277,18 @@ class DeveloperApiRepository(private val context: Context) {
 
     private fun mapHttpCodeToFriendlyMessage(code: Int): String {
         return when (code) {
-            400 -> "Bad request (HTTP 400). Please verify activation code."
-            401 -> "Unauthorized (HTTP 401). Invalid activation credentials."
-            403 -> "Forbidden (HTTP 403). Access denied by developer server."
-            404 -> "Activation endpoint not found on server (HTTP 404)."
+            400 -> "Invalid request. Please verify the activation code format."
+            401 -> "Invalid activation credentials. Please check your activation key."
+            403 -> "Access restricted by licensing server."
+            404 -> "Licensing endpoint not found (HTTP 404)."
             408 -> "Request timeout (HTTP 408). Server took too long to respond."
-            409 -> "Conflict (HTTP 409). Activation code is already in use."
-            422 -> "Unprocessable entity (HTTP 422). Invalid activation payload."
-            429 -> "Too many requests (HTTP 429). Please wait a moment and try again."
-            500 -> "Internal server error (HTTP 500). Please try again later."
-            502 -> "Bad gateway (HTTP 502). Developer server is temporarily unavailable."
-            503 -> "Service unavailable (HTTP 503). Server is undergoing maintenance."
-            504 -> "Gateway timeout (HTTP 504). Upstream server took too long to respond."
+            409 -> "Activation code is already registered to another terminal."
+            422 -> "Invalid activation code payload."
+            429 -> "Too many requests. Please wait a moment and try again."
+            500 -> "Internal server error. Please try again later."
+            502 -> "Bad gateway. Licensing service is temporarily unavailable."
+            503 -> "Licensing service is temporarily undergoing maintenance."
+            504 -> "Gateway timeout. Server took too long to respond."
             else -> "Server returned HTTP $code"
         }
     }
