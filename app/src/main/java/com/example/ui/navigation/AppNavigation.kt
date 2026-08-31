@@ -32,6 +32,7 @@ sealed class Screen(val route: String) {
     object Users : Screen("users")
     object CashierManagement : Screen("cashier_management")
     object StoreManagement : Screen("store_management")
+    object OwnerControlCenter : Screen("owner_control_center")
     object AccessManagement : Screen("access_management")
     object Setup : Screen("setup")
     object Activation : Screen("activation")
@@ -148,6 +149,12 @@ fun AppNavigation(
             }
             composable(Screen.StoreManagement.route) {
                 StoreManagementCenterScreen(
+                    viewModel = viewModel,
+                    onNavigateBack = { navController.popBackStack() }
+                )
+            }
+            composable(Screen.OwnerControlCenter.route) {
+                OwnerControlCenterScreen(
                     viewModel = viewModel,
                     onNavigateBack = { navController.popBackStack() }
                 )

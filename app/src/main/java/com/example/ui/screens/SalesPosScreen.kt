@@ -33,6 +33,7 @@ import com.example.data.entity.Customer
 import com.example.data.entity.Product
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
+import com.example.ui.components.CameraBarcodeScannerView
 import com.example.ui.components.LiveClockHeaderWidget
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.invoice.InvoiceReceiptDialog
@@ -76,6 +77,8 @@ fun SalesPosScreen(
     val storeDisplayName = storeSettings?.storeName?.ifBlank { "SENTRY STORE" } ?: "SENTRY STORE"
     val branchDisplayName = "Main Branch"
 
+    val isCameraScannerEnabled by viewModel.cameraScannerEnabled.collectAsState()
+
     // Default view is CATALOG (Product List First as per required POS flow)
     var currentTab by remember { mutableStateOf(PosTab.CATALOG) }
     var viewMode by remember { mutableStateOf(PosViewMode.GRID) }
@@ -83,6 +86,7 @@ fun SalesPosScreen(
     var selectedCategory by remember { mutableStateOf("All") }
 
     // Dialog States
+    var showCameraScannerDialog by remember { mutableStateOf(false) }
     var showCustomerDialog by remember { mutableStateOf(false) }
     var showCashierSelectorDialog by remember { mutableStateOf(false) }
     var showHeldCartsDialog by remember { mutableStateOf(false) }
@@ -123,6 +127,41 @@ fun SalesPosScreen(
     }
 
     val totalUnits = remember(cart) { cart.sumOf { it.quantity } }
+
+    // ----------------------------------------------------
+    // CAMERA BARCODE SCANNER MODAL
+    // ----------------------------------------------------
+    if (showCameraScannerDialog) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showCameraScannerDialog = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black)
+            ) {
+                CameraBarcodeScannerView(
+                    onBarcodeScanned = { scannedCode ->
+                        val trimmed = scannedCode.trim()
+                        val foundProduct = products.find {
+                            it.barcode.trim().equals(trimmed, ignoreCase = true) ||
+                            it.name.trim().equals(trimmed, ignoreCase = true)
+                        }
+                        if (foundProduct != null) {
+                            viewModel.addToCart(foundProduct)
+                            successToast = "Scanned & Added: ${foundProduct.name} ($trimmed)"
+                        } else {
+                            errorMessage = "Barcode '$trimmed' not found in store catalog"
+                        }
+                        showCameraScannerDialog = false
+                    },
+                    onClose = { showCameraScannerDialog = false },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+    }
 
     // ----------------------------------------------------
     // INVOICE RECEIPT DIALOG (Thermal / PDF)
@@ -1053,9 +1092,8 @@ fun SalesPosScreen(
             }
         },
         bottomBar = {
-            // DYNAMIC BOTTOM BAR
-            if (currentTab == PosTab.CATALOG && cart.isNotEmpty()) {
-                // Floating Bottom Cart Bar when browsing Catalog
+            // PERSISTENT BOTTOM BAR ON PRODUCT LIST / CATALOG SCREEN
+            if (currentTab == PosTab.CATALOG) {
                 Surface(
                     color = Navy900,
                     shadowElevation = 12.dp,
@@ -1069,32 +1107,55 @@ fun SalesPosScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(
-                                text = "Current Bill: ${cart.size} Items (%.0f Units)".format(totalUnits),
-                                fontSize = 12.sp,
-                                color = Slate300
-                            )
-                            Text(
-                                text = "$currency %.2f".format(netAmount),
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 18.sp,
-                                color = Gold400
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(if (cart.isNotEmpty()) Emerald600 else Slate700),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    Icons.Default.ShoppingCart,
+                                    contentDescription = "Cart",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = if (cart.isNotEmpty()) "${cart.size} Items (%.0f Units)".format(totalUnits) else "0 Items (Cart Empty)",
+                                    fontSize = 12.sp,
+                                    color = if (cart.isNotEmpty()) Slate200 else Slate400,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "$currency %.2f".format(netAmount),
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontSize = 18.sp,
+                                    color = if (cart.isNotEmpty()) Gold400 else Slate300
+                                )
+                            }
                         }
 
                         Button(
                             onClick = { currentTab = PosTab.CART },
-                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
-                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Emerald600,
+                                disabledContainerColor = Slate700
+                            ),
+                            shape = RoundedCornerShape(10.dp),
                             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                            modifier = Modifier.testTag("btn_view_cart_bottom_bar")
+                            modifier = Modifier
+                                .testTag("btn_view_cart_bottom_bar")
+                                .testTag("view_cart_button")
                         ) {
-                            Icon(Icons.Default.ShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
                             Text("VIEW CART", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -1318,6 +1379,29 @@ fun SalesPosScreen(
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Camera Scanner Button
+                        Surface(
+                            onClick = { showCameraScannerDialog = true },
+                            color = Emerald50,
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Emerald300),
+                            modifier = Modifier.testTag("btn_camera_scanner")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = "Camera Scanner", tint = Emerald700, modifier = Modifier.size(13.dp))
+                                Text(
+                                    text = "Scan",
+                                    color = Emerald800,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
                         if (heldCarts.isNotEmpty()) {
                             Surface(
                                 onClick = { showHeldCartsDialog = true },
@@ -1443,9 +1527,22 @@ fun SalesPosScreen(
                     placeholder = { Text("Search product name, barcode, category...", fontSize = 12.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Navy500, modifier = Modifier.size(18.dp)) },
                     trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Navy500, modifier = Modifier.size(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                    Icon(Icons.Default.Close, contentDescription = "Clear", tint = Navy500, modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            IconButton(
+                                onClick = { showCameraScannerDialog = true },
+                                modifier = Modifier.size(36.dp).testTag("camera_scan_button")
+                            ) {
+                                Icon(
+                                    Icons.Default.QrCodeScanner,
+                                    contentDescription = "Camera Barcode Scanner",
+                                    tint = Emerald600,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
                         }
                     },

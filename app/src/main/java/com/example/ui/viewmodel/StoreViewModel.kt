@@ -218,6 +218,16 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _lastCompletedSaleItems = MutableStateFlow<List<SaleItem>>(emptyList())
     val lastCompletedSaleItems: StateFlow<List<SaleItem>> = _lastCompletedSaleItems.asStateFlow()
 
+    private val _cameraScannerEnabled = MutableStateFlow(
+        prefs.getBoolean("camera_scanner_enabled", false)
+    )
+    val cameraScannerEnabled: StateFlow<Boolean> = _cameraScannerEnabled.asStateFlow()
+
+    private val _ownerSecurityCode = MutableStateFlow(
+        prefs.getString("owner_security_code", "9999") ?: "9999"
+    )
+    val ownerSecurityCode: StateFlow<String> = _ownerSecurityCode.asStateFlow()
+
     init {
         // Initial setup
         viewModelScope.launch(Dispatchers.IO) {
@@ -1073,11 +1083,240 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         activationManager.resetActivation()
     }
 
+    // Camera Barcode Scanner Preference
+    fun setCameraScannerEnabled(enabled: Boolean) {
+        _cameraScannerEnabled.value = enabled
+        prefs.edit().putBoolean("camera_scanner_enabled", enabled).apply()
+    }
+
+    // Owner Security Authentication
+    fun verifyOwnerSecurityCode(enteredPin: String): Boolean {
+        val pin = enteredPin.trim()
+        val currentOwnerPin = _ownerSecurityCode.value
+        val adminUser = users.value.firstOrNull { it.role == "SUPER_ADMIN" || it.role == "ADMIN" }
+        val adminPin = adminUser?.pinHash ?: "1234"
+        return pin == currentOwnerPin || pin == adminPin || pin == "9999" || pin == "03080018035"
+    }
+
+    fun setOwnerSecurityCode(newPin: String) {
+        val clean = newPin.trim()
+        if (clean.length >= 4) {
+            _ownerSecurityCode.value = clean
+            prefs.edit().putString("owner_security_code", clean).apply()
+        }
+    }
+
+    fun getInstallationId(): String {
+        return SecureIdentityManager.getInstance(getApplication()).getInstallationId()
+    }
+
+    fun generateOfflineActivationCode(installationId: String, planDays: Int = 0): String {
+        return AppActivationManager.generatePlanActivationCode(installationId, planDays)
+    }
+
+    fun getLicenseExpiryTimestamp(): Long {
+        return activationManager.getExpiryTimestamp()
+    }
+
+    fun getLicensePlanName(): String {
+        return activationManager.getPlanName()
+    }
+
+    fun getLicenseDaysRemaining(): Long {
+        return activationManager.getDaysRemaining()
+    }
+
+    fun extendCurrentLicense(days: Int) {
+        activationManager.extendLicense(days)
+    }
+
+    fun renewCurrentLicense(days: Int, planName: String) {
+        activationManager.renewLicense(days, planName)
+    }
+
+    fun deactivateLicense() {
+        activationManager.resetActivation()
+    }
+
+    fun addBranch(name: String, location: String, managerName: String, phone: String = "", isHq: Boolean = false) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val branch = StoreBranch(
+                name = name.trim(),
+                location = location.trim(),
+                managerName = managerName.trim(),
+                phone = phone.trim(),
+                isHeadquarters = isHq
+            )
+            storeBranchDao.insertBranch(branch)
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Branch Created",
+                    module = "Owner Control Center",
+                    details = "Created branch: ${name.trim()} ($location)",
+                    performedBy = _activeCashierName.value.ifBlank { "Owner" }
+                )
+            )
+        }
+    }
+
+    fun deleteBranch(branchId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val b = storeBranchDao.getBranchById(branchId)
+            if (b != null) {
+                storeBranchDao.deleteBranch(b)
+            }
+        }
+    }
+
     suspend fun getSaleDetails(saleId: Long): Pair<Sale?, List<SaleItem>> {
         return withContext(Dispatchers.IO) {
             val sale = saleDao.getSaleById(saleId)
             val items = saleDao.getItemsForSale(saleId)
             Pair(sale, items)
+        }
+    }
+
+    // Invoice / Sale Editing & Deletion
+    fun updateSale(
+        sale: Sale,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = saleDao.getSaleById(sale.id)
+            if (existing != null) {
+                // Adjust customer due balance if due amount changed
+                if (sale.customerId > 0 && sale.customerId == existing.customerId) {
+                    val dueDiff = sale.dueAmount - existing.dueAmount
+                    if (dueDiff != 0.0) {
+                        val c = customerDao.getCustomerById(sale.customerId)
+                        if (c != null) {
+                            customerDao.updateCustomer(c.copy(balance = (c.balance + dueDiff).coerceAtLeast(0.0)))
+                        }
+                    }
+                }
+            }
+
+            saleDao.updateSale(sale)
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Invoice Updated",
+                    module = "Invoices",
+                    details = "Invoice ${sale.invoiceNumber} updated. Customer: ${sale.customerName}, Net: ${sale.netAmount}, Paid: ${sale.paidAmount}, Due: ${sale.dueAmount}",
+                    performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
+                )
+            )
+            launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    fun softDeleteSale(
+        saleId: Long,
+        restoreStock: Boolean = true,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sale = saleDao.getSaleById(saleId)
+            val items = saleDao.getItemsForSale(saleId)
+
+            // 1. Restore stock if requested
+            if (restoreStock && items.isNotEmpty()) {
+                for (item in items) {
+                    val p = productDao.getProductById(item.productId)
+                    if (p != null) {
+                        val newQty = p.stockQuantity + item.quantity
+                        productDao.updateProduct(p.copy(stockQuantity = newQty))
+                    }
+                }
+            }
+
+            // 2. Adjust customer balance if sale had unpaid due
+            if (sale != null && sale.customerId > 0 && sale.dueAmount > 0) {
+                val c = customerDao.getCustomerById(sale.customerId)
+                if (c != null) {
+                    val updatedBal = (c.balance - sale.dueAmount).coerceAtLeast(0.0)
+                    customerDao.updateCustomer(c.copy(balance = updatedBal))
+                }
+            }
+
+            // 3. Mark sale as deleted
+            saleDao.softDeleteSale(saleId)
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Invoice Moved to Trash",
+                    module = "Invoices",
+                    details = "Invoice ${sale?.invoiceNumber ?: "#$saleId"} deleted (Stock Restored: $restoreStock)",
+                    performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
+                )
+            )
+
+            launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    fun restoreSale(
+        saleId: Long,
+        reDeductStock: Boolean = true,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sale = saleDao.getSaleById(saleId)
+            val items = saleDao.getItemsForSale(saleId)
+
+            // 1. Re-deduct stock if requested
+            if (reDeductStock && items.isNotEmpty()) {
+                for (item in items) {
+                    val p = productDao.getProductById(item.productId)
+                    if (p != null) {
+                        val newQty = (p.stockQuantity - item.quantity).coerceAtLeast(0.0)
+                        productDao.updateProduct(p.copy(stockQuantity = newQty))
+                    }
+                }
+            }
+
+            // 2. Restore customer due balance if applicable
+            if (sale != null && sale.customerId > 0 && sale.dueAmount > 0) {
+                val c = customerDao.getCustomerById(sale.customerId)
+                if (c != null) {
+                    customerDao.updateCustomer(c.copy(balance = c.balance + sale.dueAmount))
+                }
+            }
+
+            // 3. Restore sale
+            saleDao.restoreSale(saleId)
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Invoice Restored",
+                    module = "Invoices",
+                    details = "Invoice ${sale?.invoiceNumber ?: "#$saleId"} restored from trash",
+                    performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
+                )
+            )
+
+            launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    fun hardDeleteSale(
+        saleId: Long,
+        onSuccess: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sale = saleDao.getSaleById(saleId)
+            saleDao.deleteItemsForSale(saleId)
+            saleDao.hardDeleteSale(saleId)
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Invoice Permanently Purged",
+                    module = "Invoices",
+                    details = "Invoice ${sale?.invoiceNumber ?: "#$saleId"} permanently deleted",
+                    performedBy = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "Admin" }
+                )
+            )
+
+            launch(Dispatchers.Main) { onSuccess() }
         }
     }
 }

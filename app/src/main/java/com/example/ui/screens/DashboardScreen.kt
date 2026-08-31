@@ -82,6 +82,7 @@ fun DashboardScreen(
         QuickActionItem("Attendance", Icons.Default.Badge, Emerald500, "attendance"),
         QuickActionItem("Daily Closing", Icons.Default.LockClock, Navy800, "closing"),
         QuickActionItem("Staff & Users", Icons.Default.ManageAccounts, Purple600, "users"),
+        QuickActionItem("👑 Owner Center", Icons.Default.AdminPanelSettings, Gold600, "owner_control_center"),
         QuickActionItem("Settings", Icons.Default.Settings, Teal600, "settings"),
         QuickActionItem("Activation", Icons.Default.VpnKey, Blue600, "activation")
     )

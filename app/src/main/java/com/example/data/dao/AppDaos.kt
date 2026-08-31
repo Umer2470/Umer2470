@@ -54,6 +54,9 @@ interface SaleDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSaleItems(items: List<SaleItem>)
 
+    @Update
+    suspend fun updateSale(sale: Sale)
+
     @Query("UPDATE sales SET isDeleted = 1 WHERE id = :id")
     suspend fun softDeleteSale(id: Long)
 
@@ -62,6 +65,12 @@ interface SaleDao {
 
     @Query("UPDATE sales SET isDeleted = 0 WHERE id = :id")
     suspend fun restoreSale(id: Long)
+
+    @Query("DELETE FROM sales WHERE id = :id")
+    suspend fun hardDeleteSale(id: Long)
+
+    @Query("DELETE FROM sale_items WHERE saleId = :saleId")
+    suspend fun deleteItemsForSale(saleId: Long)
 }
 
 @Dao
@@ -177,11 +186,20 @@ interface StoreBranchDao {
     @Query("SELECT * FROM store_branches WHERE isActive = 1 ORDER BY id ASC")
     fun getAllBranchesFlow(): Flow<List<StoreBranch>>
 
+    @Query("SELECT * FROM store_branches WHERE id = :id LIMIT 1")
+    suspend fun getBranchById(id: Long): StoreBranch?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBranch(branch: StoreBranch): Long
 
     @Update
     suspend fun updateBranch(branch: StoreBranch)
+
+    @Delete
+    suspend fun deleteBranch(branch: StoreBranch)
+
+    @Query("UPDATE store_branches SET isActive = 0 WHERE id = :id")
+    suspend fun deactivateBranch(id: Long)
 }
 
 @Dao

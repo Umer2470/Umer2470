@@ -91,6 +91,14 @@ fun SidebarNavigationDrawerContent(
             bgColor = Blue50,
             items = listOf(
                 NavChildItem(
+                    title = "👑 Owner Control Center",
+                    subtitle = "Master PIN, license & proprietor hub",
+                    icon = Icons.Default.AdminPanelSettings,
+                    route = "owner_control_center",
+                    testTag = "drawer_item_owner_control_center",
+                    minRole = "ADMIN"
+                ),
+                NavChildItem(
                     title = "Store Information & Profile",
                     subtitle = "Name, NTN, contact & tax settings",
                     icon = Icons.Default.Store,

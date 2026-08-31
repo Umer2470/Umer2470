@@ -51,6 +51,7 @@ fun SettingsScreen(
     val fontSizeScale by viewModel.fontSizeScale.collectAsState()
     val fontFamilyChoice by viewModel.fontFamilyChoice.collectAsState()
     val isBiometricEnabled by viewModel.isBiometricAuthEnabled.collectAsState()
+    val isCameraScannerEnabled by viewModel.cameraScannerEnabled.collectAsState()
 
     val context = LocalContext.current
     val (isBioHardwareAvailable, bioStatusText) = remember(context) { BiometricPromptHelper.isBiometricAvailable(context) }
@@ -739,8 +740,75 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. Biometric Security & Disaster Recovery
-            SectionHeader(title = "Biometric Security & Authentication", subtitle = "Fingerprint & Face unlock for terminal access")
+            // 4. Biometric Security & Hardware Peripherals
+            SectionHeader(title = "Biometric Security & Hardware Peripherals", subtitle = "Fingerprint unlock, Camera Barcode Scanner & Laser inputs")
+
+            Card(
+                modifier = Modifier.fillMaxWidth().testTag("settings_scanner_card"),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Surface(
+                                color = if (isCameraScannerEnabled) Emerald100 else Slate100,
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.QrCodeScanner,
+                                    contentDescription = "Scanner Icon",
+                                    tint = if (isCameraScannerEnabled) Emerald700 else Navy500,
+                                    modifier = Modifier.padding(8.dp).size(24.dp)
+                                )
+                            }
+                            Column {
+                                Text(
+                                    text = "Camera Barcode Scanner",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = Navy900
+                                )
+                                Text(
+                                    text = if (isCameraScannerEnabled) "Enabled (Camera viewfinder active on POS)" else "Disabled (Default OFF - Laser/USB Scanner active)",
+                                    fontSize = 12.sp,
+                                    color = if (isCameraScannerEnabled) Emerald700 else Navy500
+                                )
+                            }
+                        }
+                        Switch(
+                            checked = isCameraScannerEnabled,
+                            onCheckedChange = { viewModel.setCameraScannerEnabled(it) },
+                            modifier = Modifier.testTag("camera_scanner_switch")
+                        )
+                    }
+
+                    Surface(
+                        color = Slate50,
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "When enabled, an interactive camera viewfinder can be opened in the POS to scan 1D & 2D barcodes directly with the device camera. Hardware USB/Bluetooth laser scanners continue to work natively in all modes.",
+                            fontSize = 11.sp,
+                            color = Navy600,
+                            modifier = Modifier.padding(10.dp)
+                        )
+                    }
+                }
+            }
 
             Card(
                 modifier = Modifier.fillMaxWidth().testTag("settings_biometric_card"),
@@ -891,10 +959,49 @@ fun SettingsScreen(
                 }
             }
 
+            // Prominent Owner Control Center Card
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onNavigate("owner_control_center") }
+                    .testTag("btn_owner_control_center"),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Navy900),
+                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Gold500),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = Navy900, modifier = Modifier.size(24.dp))
+                        }
+                        Column {
+                            Text("👑 Store Owner Control Center", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
+                            Text("Master PIN Reset, Commercial License & Multi-Store Hub", fontSize = 11.sp, color = Gold400)
+                        }
+                    }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Gold400)
+                }
+            }
+
             // 6. Administration & Management Modules
             SectionHeader(title = "Administration & System Modules", subtitle = "Direct access to management hubs")
 
             listOf(
+                Triple("👑 Owner Control Center", "Master PIN, license tools & proprietor hub", "owner_control_center"),
                 Triple("Store Management Center", "Multi-branch and outlet configurations", "store_management"),
                 Triple("Store Access & Roles", "Role permissions & security rules", "access_management"),
                 Triple("Business Profile Setup", "Store name, address, receipt headers", "setup"),

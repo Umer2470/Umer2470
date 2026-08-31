@@ -24,53 +24,8 @@ fun StoreManagementCenterScreen(
     viewModel: StoreViewModel,
     onNavigateBack: () -> Unit
 ) {
-    val storeSettings by viewModel.storeSettings.collectAsState()
-    val branches by viewModel.branches.collectAsState()
-
-    Scaffold(
-        topBar = {
-            AppHeader(
-                title = "Store Management Center",
-                subtitle = "Branch & Multi-Store Hub",
-                onBackClick = onNavigateBack
-            )
-        },
-        containerColor = Slate50
-    ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp)
-        ) {
-            SectionHeader(title = "Branches & Outlets", subtitle = "${branches.size} Active Branches")
-
-            branches.forEach { branch ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text(branch.name, fontWeight = FontWeight.Bold, color = Navy900)
-                            Text("Location: ${branch.location}", fontSize = 12.sp, color = Navy500)
-                        }
-                        if (branch.isHeadquarters) {
-                            Text("Headquarters", color = Gold600, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                        }
-                    }
-                }
-            }
-        }
-    }
+    OwnerControlCenterScreen(
+        viewModel = viewModel,
+        onNavigateBack = onNavigateBack
+    )
 }
