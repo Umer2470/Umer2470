@@ -78,7 +78,53 @@ class AppActivationManager private constructor(private val context: Context) {
         val trimmedCode = activationCode.trim().uppercase()
         val installationId = identityManager.getInstallationId()
 
-        // 1. Check Offline Cryptographic Verification First
+        // 1. Check Universal Developer License Platform Engine First
+        val platformEngine = com.example.data.api.platform.UniversalLicensePlatformEngine.getInstance(context)
+        val platformResult = platformEngine.verifyLicenseCode(
+            currentAppId = com.example.data.api.platform.UniversalLicensePlatformEngine.APP_SENTRY_STORE_POS,
+            currentInstallationId = installationId,
+            licenseCode = trimmedCode
+        )
+
+        when (platformResult) {
+            is com.example.data.api.platform.LicenseVerificationResult.Valid -> {
+                val lic = platformResult.license
+                val token = SecurityUtils.generateDeterministicToken(installationId)
+                saveActivationSuccess(
+                    status = STATUS_ACTIVATED,
+                    message = platformResult.message,
+                    token = token,
+                    code = trimmedCode,
+                    expiryMs = lic.expiryDate,
+                    planName = lic.planName
+                )
+                onResult(STATUS_ACTIVATED, platformResult.message, true)
+                return
+            }
+            is com.example.data.api.platform.LicenseVerificationResult.AppMismatch -> {
+                val msg = "Application Mismatch: Key generated for '${platformResult.actualApp}' cannot be used on SENTRY STORE POS."
+                onResult(STATUS_INSTALLATION_MISMATCH, msg, false)
+                return
+            }
+            is com.example.data.api.platform.LicenseVerificationResult.InstallationMismatch -> {
+                val msg = "Installation Mismatch: Key bound to device '${platformResult.actualInstallation}', not '$installationId'."
+                onResult(STATUS_INSTALLATION_MISMATCH, msg, false)
+                return
+            }
+            is com.example.data.api.platform.LicenseVerificationResult.Expired -> {
+                onResult(STATUS_EXPIRED, platformResult.message, false)
+                return
+            }
+            is com.example.data.api.platform.LicenseVerificationResult.Suspended -> {
+                onResult(STATUS_REVOKED, platformResult.message, false)
+                return
+            }
+            is com.example.data.api.platform.LicenseVerificationResult.Invalid -> {
+                // Continue to try legacy verification and online API
+            }
+        }
+
+        // 2. Check Legacy Offline Cryptographic Verification
         val planInfo = parseAndVerifyCode(installationId, trimmedCode)
         if (planInfo != null) {
             val token = SecurityUtils.generateDeterministicToken(installationId)
@@ -99,7 +145,7 @@ class AppActivationManager private constructor(private val context: Context) {
             return
         }
 
-        // 2. Try Online Activation via Developer Server
+        // 3. Try Online Activation via Developer Server
         val repo = com.example.data.api.repository.DeveloperApiRepository(context)
         when (val result = repo.activateInstallation(trimmedCode)) {
             is ApiResult.Success -> {

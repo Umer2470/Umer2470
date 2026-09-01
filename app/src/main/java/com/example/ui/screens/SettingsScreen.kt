@@ -1002,6 +1002,7 @@ fun SettingsScreen(
 
             listOf(
                 Triple("👑 Owner Control Center", "Master PIN, license tools & proprietor hub", "owner_control_center"),
+                Triple("🚀 Developer Platform Hub", "Multi-app management, license registry & hardware binding", "developer_hub"),
                 Triple("Store Management Center", "Multi-branch and outlet configurations", "store_management"),
                 Triple("Store Access & Roles", "Role permissions & security rules", "access_management"),
                 Triple("Business Profile Setup", "Store name, address, receipt headers", "setup"),

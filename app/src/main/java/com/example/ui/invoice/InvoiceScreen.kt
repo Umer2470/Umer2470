@@ -47,6 +47,7 @@ fun InvoiceScreen(
 ) {
     val context = LocalContext.current
     val sales by viewModel.sales.collectAsState()
+    val customersList by viewModel.customers.collectAsState()
     val storeSettings by viewModel.storeSettings.collectAsState()
     val currency = storeSettings?.currencySymbol ?: "Rs"
 
@@ -57,16 +58,66 @@ fun InvoiceScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf(InvoiceFilter.ALL) }
     var selectedSaleForReceipt by remember { mutableStateOf<Pair<Sale, List<SaleItem>>?>(null) }
+    var selectedSaleForEdit by remember { mutableStateOf<Pair<Sale, List<SaleItem>>?>(null) }
+    var selectedSaleForDelete by remember { mutableStateOf<Sale?>(null) }
     var printingSaleId by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
 
+    // View Receipt Dialog
     if (selectedSaleForReceipt != null) {
         val (sale, items) = selectedSaleForReceipt!!
         InvoiceReceiptDialog(
             sale = sale,
             items = items,
             settings = storeSettings,
-            onDismiss = { selectedSaleForReceipt = null }
+            onDismiss = { selectedSaleForReceipt = null },
+            onEditRequest = { s ->
+                selectedSaleForReceipt = null
+                selectedSaleForEdit = Pair(s, items)
+            },
+            onDeleteRequest = { s ->
+                selectedSaleForReceipt = null
+                selectedSaleForDelete = s
+            }
+        )
+    }
+
+    // Edit Invoice Dialog
+    if (selectedSaleForEdit != null) {
+        val (sale, items) = selectedSaleForEdit!!
+        EditInvoiceDialog(
+            sale = sale,
+            items = items,
+            currency = currency,
+            customersList = customersList,
+            onDismiss = { selectedSaleForEdit = null },
+            onSave = { updatedSale ->
+                viewModel.updateSale(updatedSale) {
+                    Toast.makeText(context, "Invoice #${updatedSale.invoiceNumber} updated successfully!", Toast.LENGTH_SHORT).show()
+                    selectedSaleForEdit = null
+                }
+            },
+            onDeleteRequest = {
+                val saleToDelete = sale
+                selectedSaleForEdit = null
+                selectedSaleForDelete = saleToDelete
+            }
+        )
+    }
+
+    // Delete Invoice Confirmation Dialog
+    if (selectedSaleForDelete != null) {
+        val sale = selectedSaleForDelete!!
+        DeleteInvoiceDialog(
+            sale = sale,
+            currency = currency,
+            onDismiss = { selectedSaleForDelete = null },
+            onConfirmDelete = { restoreStock ->
+                viewModel.softDeleteSale(sale.id, restoreStock = restoreStock) {
+                    Toast.makeText(context, "Invoice #${sale.invoiceNumber} moved to Trash (Recycle Bin)", Toast.LENGTH_SHORT).show()
+                    selectedSaleForDelete = null
+                }
+            }
         )
     }
 
@@ -510,6 +561,45 @@ fun InvoiceScreen(
                                                 fontSize = 11.sp,
                                                 color = Navy800,
                                                 fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+
+                                        // 4. Quick Edit Button
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    val (s, items) = viewModel.getSaleDetails(sale.id)
+                                                    if (s != null) {
+                                                        selectedSaleForEdit = Pair(s, items)
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .testTag("edit_invoice_${sale.id}")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Edit Invoice",
+                                                tint = Gold600,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        // 5. Quick Delete Button
+                                        IconButton(
+                                            onClick = {
+                                                selectedSaleForDelete = sale
+                                            },
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .testTag("delete_invoice_${sale.id}")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.DeleteOutline,
+                                                contentDescription = "Delete Invoice",
+                                                tint = Rose600,
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
                                     }

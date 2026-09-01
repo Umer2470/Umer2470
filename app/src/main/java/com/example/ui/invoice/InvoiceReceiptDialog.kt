@@ -46,7 +46,9 @@ fun InvoiceReceiptDialog(
     sale: Sale,
     items: List<SaleItem>,
     settings: StoreSettings?,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onEditRequest: ((Sale) -> Unit)? = null,
+    onDeleteRequest: ((Sale) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val effectiveSettings = settings ?: StoreSettings()
@@ -107,6 +109,38 @@ fun InvoiceReceiptDialog(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onEditRequest != null) {
+                            IconButton(
+                                onClick = {
+                                    onDismiss()
+                                    onEditRequest(sale)
+                                },
+                                modifier = Modifier.testTag("receipt_edit_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Invoice",
+                                    tint = Gold400
+                                )
+                            }
+                        }
+
+                        if (onDeleteRequest != null) {
+                            IconButton(
+                                onClick = {
+                                    onDismiss()
+                                    onDeleteRequest(sale)
+                                },
+                                modifier = Modifier.testTag("receipt_delete_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "Delete Invoice",
+                                    tint = Rose400
+                                )
+                            }
+                        }
+
                         // Header Quick Print Button
                         IconButton(
                             onClick = {

@@ -159,10 +159,10 @@ interface StoreSettingsDao {
 
 @Dao
 interface UserDao {
-    @Query("SELECT * FROM users WHERE isActive = 1 ORDER BY fullName ASC")
+    @Query("SELECT * FROM users ORDER BY fullName ASC")
     fun getAllUsersFlow(): Flow<List<User>>
 
-    @Query("SELECT * FROM users WHERE username = :username AND isActive = 1 LIMIT 1")
+    @Query("SELECT * FROM users WHERE username = :username LIMIT 1")
     suspend fun getUserByUsername(username: String): User?
 
     @Query("SELECT * FROM users WHERE id = :id LIMIT 1")

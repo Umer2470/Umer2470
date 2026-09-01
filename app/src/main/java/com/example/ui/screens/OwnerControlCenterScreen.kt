@@ -53,7 +53,8 @@ enum class OwnerTab {
 @Composable
 fun OwnerControlCenterScreen(
     viewModel: StoreViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToDeveloperHub: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val clipboardManager = remember { context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager }
@@ -486,6 +487,44 @@ fun OwnerControlCenterScreen(
                                                 Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Navy700)
                                             }
                                         }
+                                    }
+                                }
+
+                                // Universal Developer Platform Hub Entry Card
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onNavigateToDeveloperHub() }
+                                        .testTag("btn_open_universal_developer_hub"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(containerColor = Navy900),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(40.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Gold500),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(Icons.Default.Hub, contentDescription = null, tint = Navy900, modifier = Modifier.size(22.dp))
+                                            }
+                                            Column {
+                                                Text("🚀 Universal Developer License Hub", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                                Text("Multi-App Ecosystem, Customer Installations & Device Transfers", fontSize = 11.sp, color = Gold300)
+                                            }
+                                        }
+                                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Gold400)
                                     }
                                 }
 

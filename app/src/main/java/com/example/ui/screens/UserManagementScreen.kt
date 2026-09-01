@@ -579,7 +579,7 @@ fun UserManagementScreen(
             }
             var errorMsg by remember { mutableStateOf<String?>(null) }
 
-            val roles = listOf("CASHIER", "ADMIN", "SUPER_ADMIN", "MANAGER", "EMPLOYEE")
+            val roles = listOf("SUPER_ADMIN", "ADMIN", "SUPERVISOR", "CASHIER")
 
             AlertDialog(
                 onDismissRequest = { showAddEditDialog = false },
