@@ -1,8 +1,11 @@
 # Add project specific ProGuard rules here.
 
 # Preserve Line Numbers for Debugging
--keepattributes SourceFile,LineNumberTable,*Annotation*,InnerClasses,EnclosingMethod
+-keepattributes SourceFile,LineNumberTable,*Annotation*,InnerClasses,EnclosingMethod,Signature
 -renamesourcefileattribute SourceFile
+
+-dontwarn **
+-ignorewarnings
 
 # --- Room Database Keep Rules ---
 -keep class * extends androidx.room.RoomDatabase { *; }
@@ -35,9 +38,12 @@
 # --- Data Entities, Repository & API Models ---
 -keep class com.example.data.** { *; }
 -keepclassmembers class com.example.data.** { *; }
+-keep class com.example.util.** { *; }
+-keepclassmembers class com.example.util.** { *; }
 
 # --- Security & Keystore Utilities ---
 -keep class com.example.data.api.security.** { *; }
+-keep class com.example.data.api.platform.** { *; }
 -keep class com.example.util.SecurityUtils { *; }
 
 # --- Moshi & Retrofit Keep Rules ---
@@ -50,3 +56,9 @@
 -keepclassmembers class * {
     @retrofit2.http.** *;
 }
+
+# --- Coroutines & OkHttp ---
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-dontwarn kotlinx.coroutines.**
+
