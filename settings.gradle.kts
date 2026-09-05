@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CH UMER POS.03080018035"
+rootProject.name = "SENTRY STORE POS"
 include(":app")

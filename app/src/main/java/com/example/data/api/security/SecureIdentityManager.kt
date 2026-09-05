@@ -18,7 +18,7 @@ class SecureIdentityManager private constructor(context: Context) {
     private fun ensureIdentityInitialized() {
         if (!prefs.contains(KEY_INSTALLATION_ID)) {
             val randomPart = UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
-            val generatedId = "APP-$randomPart"
+            val generatedId = "APP-SENTRY-$randomPart"
             prefs.edit().putString(KEY_INSTALLATION_ID, generatedId).apply()
         }
         if (!prefs.contains(KEY_DEVICE_FINGERPRINT)) {
@@ -31,7 +31,7 @@ class SecureIdentityManager private constructor(context: Context) {
     fun getInstallationId(): String {
         return prefs.getString(KEY_INSTALLATION_ID, null) ?: run {
             val randomPart = UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
-            val generatedId = "APP-$randomPart"
+            val generatedId = "APP-SENTRY-$randomPart"
             prefs.edit().putString(KEY_INSTALLATION_ID, generatedId).apply()
             generatedId
         }
@@ -56,7 +56,7 @@ class SecureIdentityManager private constructor(context: Context) {
     fun getAppVersion(): String = "1.0"
 
     companion object {
-        private const val PREFS_NAME = "ch_umer_secure_identity"
+        private const val PREFS_NAME = "sentry_store_secure_identity"
         private const val KEY_INSTALLATION_ID = "key_installation_id"
         private const val KEY_DEVICE_FINGERPRINT = "key_device_fingerprint"
         private const val KEY_CUSTOMER_ID = "key_customer_id"

@@ -11,7 +11,7 @@ android {
   compileSdk = 36
 
   defaultConfig {
-    applicationId = "com.aistudio.umairstore.kzpqv"
+    applicationId = "com.aistudio.sentrystore.pos"
     minSdk = 24
     targetSdk = 36
     versionCode = 1

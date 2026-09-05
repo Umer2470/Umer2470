@@ -877,12 +877,19 @@ fun SettingsScreen(
                                 tint = if (isBioHardwareAvailable) Emerald700 else Amber700,
                                 modifier = Modifier.size(18.dp)
                             )
-                            Text(
-                                text = bioStatusText,
-                                fontSize = 12.sp,
-                                color = if (isBioHardwareAvailable) Emerald800 else Amber800,
-                                fontWeight = FontWeight.Medium
-                            )
+                            Column {
+                                Text(
+                                    text = bioStatusText,
+                                    fontSize = 12.sp,
+                                    color = if (isBioHardwareAvailable) Emerald800 else Amber800,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Applies solely to cashier login. Owner / Developer Center requires Dedicated Password/Key only.",
+                                    fontSize = 10.sp,
+                                    color = Slate600
+                                )
+                            }
                         }
                     }
 
@@ -990,7 +997,7 @@ fun SettingsScreen(
                         }
                         Column {
                             Text("👑 Store Owner Control Center", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 15.sp)
-                            Text("Master PIN Reset, Commercial License & Multi-Store Hub", fontSize = 11.sp, color = Gold400)
+                            Text("Dedicated Owner Password/Key, Commercial License & Branches", fontSize = 11.sp, color = Gold400)
                         }
                     }
                     Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Gold400)

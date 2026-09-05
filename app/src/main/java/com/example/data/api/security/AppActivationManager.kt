@@ -255,7 +255,7 @@ class AppActivationManager private constructor(private val context: Context) {
         const val STATUS_ALREADY_USED = "ALREADY_USED"
         const val STATUS_NETWORK_ERROR = "NETWORK_ERROR"
 
-        private const val PREFS_NAME = "ch_umer_app_activation"
+        private const val PREFS_NAME = "sentry_store_app_activation"
         private const val KEY_ACTIVATION_STATUS = "key_activation_status"
         private const val KEY_ACTIVATION_MESSAGE = "key_activation_message"
         private const val KEY_ACTIVATION_TOKEN = "key_activation_token"

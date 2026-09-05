@@ -206,7 +206,7 @@ fun DeveloperControlHubScreen(
                             }
 
                             Text(
-                                text = "Developer Master Security Gate",
+                                text = "Developer Security Authorization",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 18.sp,
                                 color = Navy900,
@@ -214,7 +214,7 @@ fun DeveloperControlHubScreen(
                             )
 
                             Text(
-                                text = "Enter Master Developer Secret Key to access central multi-app licensing, customer databases, device transfers, and platform telemetry.",
+                                text = "Enter Dedicated Owner Security Password/PIN or Owner Security Key to access Developer Control Hub.",
                                 fontSize = 12.sp,
                                 color = Navy500,
                                 textAlign = TextAlign.Center
@@ -226,8 +226,8 @@ fun DeveloperControlHubScreen(
                                     enteredMasterKey = it
                                     masterKeyError = null
                                 },
-                                label = { Text("Developer Master Key / PIN") },
-                                placeholder = { Text("Enter Developer Key or Admin PIN") },
+                                label = { Text("Owner Password/PIN or Security Key") },
+                                placeholder = { Text("Enter Owner PIN or Owner Security Key") },
                                 visualTransformation = PasswordVisualTransformation(),
                                 singleLine = true,
                                 isError = masterKeyError != null,
@@ -235,7 +235,7 @@ fun DeveloperControlHubScreen(
                                     if (masterKeyError != null) {
                                         Text(masterKeyError!!, color = Rose600)
                                     } else {
-                                        Text("Developer Auth: Super Admin PIN or Emergency Recovery Code", fontSize = 11.sp, color = Navy400)
+                                        Text("Dedicated Owner Credential Only (Cashier & Staff PINs not accepted)", fontSize = 11.sp, color = Navy400)
                                     }
                                 },
                                 shape = RoundedCornerShape(10.dp),
@@ -252,7 +252,7 @@ fun DeveloperControlHubScreen(
                                         enteredMasterKey = ""
                                         masterKeyError = null
                                     } else {
-                                        masterKeyError = "Invalid Developer Master Key. Access Denied."
+                                        masterKeyError = "Invalid Owner Security Credential. Access Denied."
                                     }
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = Navy900),
@@ -264,7 +264,32 @@ fun DeveloperControlHubScreen(
                             ) {
                                 Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text("Authenticate Developer Console", fontWeight = FontWeight.Bold)
+                                Text("Verify & Access Developer Hub", fontWeight = FontWeight.Bold)
+                            }
+
+                            Surface(
+                                color = Slate100,
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Shield,
+                                        contentDescription = null,
+                                        tint = Navy700,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "Biometric authentication is completely excluded. Access is permitted strictly via Dedicated Owner Password/PIN or Security Key.",
+                                        fontSize = 11.sp,
+                                        color = Navy700,
+                                        lineHeight = 15.sp
+                                    )
+                                }
                             }
                         }
                     }

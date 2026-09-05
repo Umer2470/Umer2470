@@ -481,17 +481,11 @@ fun AppNavigation(
                     }
                 }
                 composable(Screen.OwnerControlCenter.route) {
-                    GuardedScreen(
-                        route = Screen.OwnerControlCenter.route,
+                    OwnerControlCenterScreen(
                         viewModel = viewModel,
-                        onNavigateBack = { navController.popBackStack() }
-                    ) {
-                        OwnerControlCenterScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() },
-                            onNavigateToDeveloperHub = { navController.navigate(Screen.DeveloperHub.route) }
-                        )
-                    }
+                        onNavigateBack = { navController.popBackStack() },
+                        onNavigateToDeveloperHub = { navController.navigate(Screen.DeveloperHub.route) }
+                    )
                 }
                 composable(Screen.AccessManagement.route) {
                     GuardedScreen(
@@ -561,16 +555,10 @@ fun AppNavigation(
                     )
                 }
                 composable(Screen.DeveloperHub.route) {
-                    GuardedScreen(
-                        route = Screen.DeveloperHub.route,
+                    DeveloperControlHubScreen(
                         viewModel = viewModel,
                         onNavigateBack = { navController.popBackStack() }
-                    ) {
-                        DeveloperControlHubScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() }
-                        )
-                    }
+                    )
                 }
             }
         }

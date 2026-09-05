@@ -9,6 +9,7 @@ import com.example.data.api.network.ConnectionState
 import com.example.data.api.network.NetworkConnectionMonitor
 import com.example.data.api.repository.DeveloperApiRepository
 import com.example.data.api.security.AppActivationManager
+import com.example.data.api.security.OwnerSecurityManager
 import com.example.data.api.security.SecureIdentityManager
 import com.example.data.db.AppDatabase
 import com.example.data.entity.*
@@ -273,7 +274,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         if (user == null) UserRole.CASHIER else UserRole.fromString(user.role)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, UserRole.CASHIER)
 
-    private val prefs = application.getSharedPreferences("pos_app_preferences", Context.MODE_PRIVATE)
+    private val prefs = application.getSharedPreferences("sentry_store_pos_preferences", Context.MODE_PRIVATE)
 
     private val _activeCashierName = MutableStateFlow(
         prefs.getString("active_cashier_name", null) ?: "Counter Cashier"
@@ -293,6 +294,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         prefs.getBoolean("camera_scanner_enabled", false)
     )
     val cameraScannerEnabled: StateFlow<Boolean> = _cameraScannerEnabled.asStateFlow()
+
+    val ownerSecurityManager = OwnerSecurityManager.getInstance(application)
 
     private val _ownerSecurityCode = MutableStateFlow(
         prefs.getString("owner_security_code", null) ?: ""
@@ -1411,44 +1414,37 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("camera_scanner_enabled", enabled).apply()
     }
 
-    // Owner Security Authentication
+    // Owner Security Authentication - strictly isolated to Dedicated Owner PIN/Password or Dedicated Owner Security Key
     fun verifyOwnerSecurityCode(enteredPin: String): Boolean {
-        val pin = enteredPin.trim()
-        if (pin.isBlank()) return false
-        val currentOwnerPin = _ownerSecurityCode.value
-        val adminUser = users.value.firstOrNull { it.role == "SUPER_ADMIN" || it.role == "ADMIN" }
-        val hashed = SecurityUtils.sha256(pin)
-        val adminMatches = adminUser != null && (adminUser.pinHash.equals(hashed, ignoreCase = true) || adminUser.pinHash == pin)
-        return pin == currentOwnerPin || adminMatches
+        return ownerSecurityManager.verifyCredential(enteredPin)
     }
 
-    // Developer Master Authentication
+    fun verifyOwnerSecurityCredential(enteredCredential: String): Boolean {
+        return ownerSecurityManager.verifyCredential(enteredCredential)
+    }
+
+    fun getOwnerSecurityKey(): String {
+        return ownerSecurityManager.getSecurityKey()
+    }
+
+    fun regenerateOwnerSecurityKey(): String {
+        return ownerSecurityManager.regenerateSecurityKey()
+    }
+
+    // Developer Master Authentication - strictly isolated to Dedicated Owner Security Password/PIN or Owner Security Key
     fun verifyDeveloperAuth(enteredKey: String): Boolean {
         val clean = enteredKey.trim()
         if (clean.isBlank()) return false
-        val hashed = SecurityUtils.sha256(clean)
 
-        // 1. Configured Developer Access Key / Hash in SharedPreferences
-        val storedDevHash = prefs.getString("developer_auth_hash", null)
-        if (storedDevHash != null && (clean == storedDevHash || hashed.equals(storedDevHash, ignoreCase = true))) {
+        // 1. Verify via Dedicated Owner Security Credential (PIN or Security Key)
+        if (ownerSecurityManager.verifyCredential(clean)) {
             return true
         }
 
-        // 2. Super Admin credentials
-        val superAdmin = users.value.firstOrNull { it.role == "SUPER_ADMIN" }
-        if (superAdmin != null) {
-            if (superAdmin.pinHash.equals(hashed, ignoreCase = true) || superAdmin.pinHash == clean) {
-                return true
-            }
-        }
-
-        // 3. Emergency Recovery Code or Passphrase
-        val savedCode = getEmergencyRecoveryCode()
-        val savedPhrase = getRecoveryPassphrase()
-        if (RecoveryUtils.normalizeEmergencyCode(clean) == RecoveryUtils.normalizeEmergencyCode(savedCode) ||
-            clean.equals(savedPhrase, ignoreCase = true) ||
-            RecoveryUtils.normalizePassphrase(clean) == RecoveryUtils.normalizePassphrase(savedPhrase)
-        ) {
+        // 2. Configured Developer Access Key / Hash in SharedPreferences (if set)
+        val storedDevHash = prefs.getString("developer_auth_hash", null)
+        val hashed = SecurityUtils.sha256(clean)
+        if (storedDevHash != null && (clean == storedDevHash || hashed.equals(storedDevHash, ignoreCase = true))) {
             return true
         }
 
@@ -1466,6 +1462,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val clean = newPin.trim()
         if (clean.length >= 4) {
             _ownerSecurityCode.value = clean
+            ownerSecurityManager.setPassword(clean)
             prefs.edit().putString("owner_security_code", clean).apply()
         }
     }

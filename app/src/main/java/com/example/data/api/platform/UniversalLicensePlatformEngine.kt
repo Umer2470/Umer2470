@@ -142,6 +142,16 @@ class UniversalLicensePlatformEngine private constructor(private val context: Co
             iconEmoji = "🏪"
         ),
         RegisteredApplication(
+            appId = APP_UMER_POS,
+            appName = "UMER POS",
+            packageIdentifier = "com.aistudio.umairstore.kzpqv",
+            version = "1.0.0",
+            developerId = "DEV-CH-UMER",
+            status = "ACTIVE",
+            secretSalt = "UMER_POS_LEGACY_SALT_2026",
+            iconEmoji = "🛒"
+        ),
+        RegisteredApplication(
             appId = "WORKOUT-APP",
             appName = "FitPulse Pro Gym & Workout",
             packageIdentifier = "com.aistudio.fitpulse.app",
@@ -936,6 +946,7 @@ class UniversalLicensePlatformEngine private constructor(private val context: Co
 
     companion object {
         const val APP_SENTRY_STORE_POS = "SENTRY-STORE-POS"
+        const val APP_UMER_POS = "UMER-POS"
 
         private const val PREFS_NAME = "universal_developer_license_platform"
         private const val KEY_APPLICATIONS = "key_registered_applications"

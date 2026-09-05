@@ -46,7 +46,7 @@ class LicenseStateCache private constructor(context: Context) {
     }
 
     companion object {
-        private const val PREFS_NAME = "ch_umer_license_cache"
+        private const val PREFS_NAME = "sentry_store_license_cache"
         private const val KEY_LICENSE_STATUS = "key_license_status"
         private const val KEY_STATUS_MESSAGE = "key_status_message"
         private const val KEY_PLAN_TYPE = "key_plan_type"
