@@ -18,7 +18,7 @@ data class TenantAccount(
     val maxShops: Int = 10,
     val maxUsers: Int = 25,
     val licenseExpiryDate: Long = System.currentTimeMillis() + (365L * 24 * 60 * 60 * 1000), // 1 year default
-    val masterSecretCode: String = "AK-8888",
+    val masterSecretCode: String = "",
     val systemNotice: String = "",
     val isMasterOwnerAccount: Boolean = false,
     val createdAt: Long = System.currentTimeMillis(),

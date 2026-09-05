@@ -418,12 +418,12 @@ fun EditInvoiceDialog(
                         ) {
                             Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text("Purchased Line Items (${items.size}):", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Navy800)
-                                items.forEach { item ->
+                                items.forEachIndexed { index, item ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text("${item.productName} × ${item.quantity.toInt()}", fontSize = 12.sp, color = Navy700)
+                                        Text("${index + 1}. ${item.productName} × ${item.quantity.toInt()}", fontSize = 12.sp, color = Navy700)
                                         Text("$currency %.2f".format(item.totalPrice), fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Navy900)
                                     }
                                 }

@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.UserRole
 import com.example.ui.navigation.Screen
 import com.example.ui.theme.*
 
@@ -44,48 +45,83 @@ data class BottomNavItem(
 fun AppBottomNavigationBar(
     currentRoute: String?,
     cartItemCount: Int = 0,
+    userRole: UserRole = UserRole.SUPER_ADMIN,
     onNavigate: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val items = remember(cartItemCount) {
-        listOf(
-            BottomNavItem(
-                route = Screen.Dashboard.route,
-                label = "Dashboard",
-                selectedIcon = Icons.Filled.Dashboard,
-                unselectedIcon = Icons.Outlined.Dashboard,
-                testTag = "bottom_nav_dashboard"
-            ),
-            BottomNavItem(
-                route = Screen.Pos.route,
-                label = "POS",
-                selectedIcon = Icons.Filled.PointOfSale,
-                unselectedIcon = Icons.Outlined.PointOfSale,
-                testTag = "bottom_nav_pos",
-                badgeCount = cartItemCount
-            ),
-            BottomNavItem(
-                route = Screen.Inventory.route,
-                label = "Products",
-                selectedIcon = Icons.Filled.Inventory2,
-                unselectedIcon = Icons.Outlined.Inventory2,
-                testTag = "bottom_nav_products"
-            ),
-            BottomNavItem(
-                route = Screen.Invoice.route,
-                label = "Invoice",
-                selectedIcon = Icons.Filled.ReceiptLong,
-                unselectedIcon = Icons.Outlined.ReceiptLong,
-                testTag = "bottom_nav_invoice"
-            ),
-            BottomNavItem(
-                route = Screen.Settings.route,
-                label = "Settings",
-                selectedIcon = Icons.Filled.Settings,
-                unselectedIcon = Icons.Outlined.Settings,
-                testTag = "bottom_nav_settings"
+    val items = remember(cartItemCount, userRole) {
+        if (userRole == UserRole.CASHIER) {
+            listOf(
+                BottomNavItem(
+                    route = Screen.Pos.route,
+                    label = "POS",
+                    selectedIcon = Icons.Filled.PointOfSale,
+                    unselectedIcon = Icons.Outlined.PointOfSale,
+                    testTag = "bottom_nav_pos",
+                    badgeCount = cartItemCount
+                ),
+                BottomNavItem(
+                    route = Screen.Invoice.route,
+                    label = "Invoice",
+                    selectedIcon = Icons.Filled.ReceiptLong,
+                    unselectedIcon = Icons.Outlined.ReceiptLong,
+                    testTag = "bottom_nav_invoice"
+                ),
+                BottomNavItem(
+                    route = Screen.Attendance.route,
+                    label = "Attendance",
+                    selectedIcon = Icons.Filled.Badge,
+                    unselectedIcon = Icons.Outlined.Badge,
+                    testTag = "bottom_nav_attendance"
+                ),
+                BottomNavItem(
+                    route = Screen.Customers.route,
+                    label = "Customers",
+                    selectedIcon = Icons.Filled.People,
+                    unselectedIcon = Icons.Outlined.People,
+                    testTag = "bottom_nav_customers"
+                )
             )
-        )
+        } else {
+            listOf(
+                BottomNavItem(
+                    route = Screen.Dashboard.route,
+                    label = "Dashboard",
+                    selectedIcon = Icons.Filled.Dashboard,
+                    unselectedIcon = Icons.Outlined.Dashboard,
+                    testTag = "bottom_nav_dashboard"
+                ),
+                BottomNavItem(
+                    route = Screen.Pos.route,
+                    label = "POS",
+                    selectedIcon = Icons.Filled.PointOfSale,
+                    unselectedIcon = Icons.Outlined.PointOfSale,
+                    testTag = "bottom_nav_pos",
+                    badgeCount = cartItemCount
+                ),
+                BottomNavItem(
+                    route = Screen.Inventory.route,
+                    label = "Products",
+                    selectedIcon = Icons.Filled.Inventory2,
+                    unselectedIcon = Icons.Outlined.Inventory2,
+                    testTag = "bottom_nav_products"
+                ),
+                BottomNavItem(
+                    route = Screen.Invoice.route,
+                    label = "Invoice",
+                    selectedIcon = Icons.Filled.ReceiptLong,
+                    unselectedIcon = Icons.Outlined.ReceiptLong,
+                    testTag = "bottom_nav_invoice"
+                ),
+                BottomNavItem(
+                    route = Screen.Settings.route,
+                    label = "Settings",
+                    selectedIcon = Icons.Filled.Settings,
+                    unselectedIcon = Icons.Outlined.Settings,
+                    testTag = "bottom_nav_settings"
+                )
+            )
+        }
     }
 
     Surface(

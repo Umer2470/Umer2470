@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -16,9 +18,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.api.security.AppActivationManager
@@ -31,9 +37,11 @@ import com.example.ui.viewmodel.StoreViewModel
 @Composable
 fun CustomerActivationScreen(
     viewModel: StoreViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val activationState by viewModel.activationState.collectAsState()
     val installationId = remember { viewModel.identityManager.getInstallationId() }
     val isActivated = activationState == AppActivationManager.STATUS_ACTIVATED || activationState == AppActivationManager.STATUS_OFFLINE_ACTIVATED
@@ -43,6 +51,19 @@ fun CustomerActivationScreen(
     var isSuccessStatus by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
 
+    fun submitActivation() {
+        if (activationCodeInput.isNotBlank()) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            isLoading = true
+            viewModel.activateApp(activationCodeInput) { status, msg, success ->
+                isLoading = false
+                statusMessage = msg
+                isSuccessStatus = success
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             AppHeader(
@@ -51,12 +72,14 @@ fun CustomerActivationScreen(
                 onBackClick = onNavigateBack
             )
         },
-        containerColor = Slate50
+        containerColor = Slate50,
+        contentWindowInsets = WindowInsets.safeDrawing
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
+                .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -150,6 +173,13 @@ fun CustomerActivationScreen(
                 label = { Text("Activation Code") },
                 placeholder = { Text("e.g. ACTV-A1B2-C3D4-E5F6-7890") },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Ascii,
+                    imeAction = ImeAction.Done
+                ),
+                keyboardActions = KeyboardActions(
+                    onDone = { submitActivation() }
+                ),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("activation_code_input"),
@@ -177,16 +207,7 @@ fun CustomerActivationScreen(
             }
 
             Button(
-                onClick = {
-                    if (activationCodeInput.isNotBlank()) {
-                        isLoading = true
-                        viewModel.activateApp(activationCodeInput) { status, msg, success ->
-                            isLoading = false
-                            statusMessage = msg
-                            isSuccessStatus = success
-                        }
-                    }
-                },
+                onClick = { submitActivation() },
                 enabled = !isLoading && activationCodeInput.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                 modifier = Modifier

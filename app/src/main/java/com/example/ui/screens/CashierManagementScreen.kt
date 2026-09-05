@@ -543,7 +543,7 @@ fun CashierManagementScreen(
                             validationError = null
                         },
                         label = { Text("Terminal PIN / Password *") },
-                        placeholder = { Text("e.g. 1234") },
+                        placeholder = { Text("Minimum 4 characters") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier
@@ -720,7 +720,7 @@ fun CashierManagementScreen(
                             addError = null
                         },
                         label = { Text("Terminal PIN / Password *") },
-                        placeholder = { Text("e.g. 1234") },
+                        placeholder = { Text("Minimum 4 characters") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         modifier = Modifier

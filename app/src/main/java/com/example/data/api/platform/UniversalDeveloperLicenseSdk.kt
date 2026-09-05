@@ -2,6 +2,7 @@ package com.example.data.api.platform
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.example.data.api.security.SecureIdentityManager
 import com.example.util.SecurityUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -43,11 +44,7 @@ class UniversalDeveloperLicenseSdk private constructor(
     )
 
     fun getInstallationId(): String {
-        return prefs.getString(KEY_INSTALLATION_ID, null) ?: run {
-            val generated = "APP-" + java.util.UUID.randomUUID().toString().replace("-", "").take(12).uppercase()
-            prefs.edit().putString(KEY_INSTALLATION_ID, generated).apply()
-            generated
-        }
+        return SecureIdentityManager.getInstance(context).getInstallationId()
     }
 
     fun isActivated(): Boolean {

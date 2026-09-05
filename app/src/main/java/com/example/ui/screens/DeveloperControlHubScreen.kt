@@ -227,7 +227,7 @@ fun DeveloperControlHubScreen(
                                     masterKeyError = null
                                 },
                                 label = { Text("Developer Master Key / PIN") },
-                                placeholder = { Text("e.g. 03080018035, 9999, or DEV-MASTER") },
+                                placeholder = { Text("Enter Developer Key or Admin PIN") },
                                 visualTransformation = PasswordVisualTransformation(),
                                 singleLine = true,
                                 isError = masterKeyError != null,
@@ -235,7 +235,7 @@ fun DeveloperControlHubScreen(
                                     if (masterKeyError != null) {
                                         Text(masterKeyError!!, color = Rose600)
                                     } else {
-                                        Text("Developer Auth: 03080018035 / 9999 / DEV-MASTER", fontSize = 11.sp, color = Navy400)
+                                        Text("Developer Auth: Super Admin PIN or Emergency Recovery Code", fontSize = 11.sp, color = Navy400)
                                     }
                                 },
                                 shape = RoundedCornerShape(10.dp),
@@ -247,7 +247,7 @@ fun DeveloperControlHubScreen(
                             Button(
                                 onClick = {
                                     val clean = enteredMasterKey.trim()
-                                    if (clean == "03080018035" || clean == "9999" || clean == "DEV-MASTER" || clean == "DEV-MASTER-9999" || clean == "1234") {
+                                    if (viewModel.verifyDeveloperAuth(clean)) {
                                         isDeveloperAuthenticated = true
                                         enteredMasterKey = ""
                                         masterKeyError = null

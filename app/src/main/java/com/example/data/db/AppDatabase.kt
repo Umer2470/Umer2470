@@ -8,6 +8,7 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.dao.*
 import com.example.data.entity.*
+import com.example.util.SecurityUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -123,19 +124,37 @@ abstract class AppDatabase : RoomDatabase() {
             database.userDao().insertUser(
                 User(
                     id = 1,
-                    username = "admin",
-                    pinHash = "1234",
-                    role = "Admin",
-                    fullName = "Administrator"
+                    username = "superadmin",
+                    pinHash = SecurityUtils.sha256("2026"),
+                    role = "SUPER_ADMIN",
+                    fullName = "Super Administrator"
                 )
             )
             database.userDao().insertUser(
                 User(
                     id = 2,
-                    username = "umer",
-                    pinHash = "1122",
-                    role = "Cashier",
-                    fullName = "Muhammad Umer",
+                    username = "admin",
+                    pinHash = SecurityUtils.sha256("8888"),
+                    role = "ADMIN",
+                    fullName = "Store Administrator"
+                )
+            )
+            database.userDao().insertUser(
+                User(
+                    id = 3,
+                    username = "supervisor",
+                    pinHash = SecurityUtils.sha256("5555"),
+                    role = "SUPERVISOR",
+                    fullName = "Store Supervisor"
+                )
+            )
+            database.userDao().insertUser(
+                User(
+                    id = 4,
+                    username = "cashier",
+                    pinHash = SecurityUtils.sha256("1111"),
+                    role = "CASHIER",
+                    fullName = "Store Cashier",
                     phone = "03080018035"
                 )
             )

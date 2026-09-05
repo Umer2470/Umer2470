@@ -131,7 +131,7 @@ fun SalesPosScreen(
     // ----------------------------------------------------
     // CAMERA BARCODE SCANNER MODAL
     // ----------------------------------------------------
-    if (showCameraScannerDialog) {
+    if (showCameraScannerDialog && isCameraScannerEnabled) {
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showCameraScannerDialog = false },
             properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
@@ -608,15 +608,15 @@ fun SalesPosScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val q = editQty.toDoubleOrNull() ?: item.quantity
-                        val p = editPrice.toDoubleOrNull() ?: item.unitPrice
-                        val d = editDisc.toDoubleOrNull() ?: 0.0
+                        val q = editQty.trim().toDoubleOrNull() ?: item.quantity
+                        val p = editPrice.trim().toDoubleOrNull() ?: item.unitPrice
+                        val d = editDisc.trim().toDoubleOrNull() ?: 0.0
                         viewModel.updateCartItemFull(
                             productId = item.product.id,
-                            quantity = q,
-                            unitPrice = p,
-                            itemDiscount = d,
-                            customVariation = editVariation
+                            quantity = q.coerceAtLeast(0.01),
+                            unitPrice = p.coerceAtLeast(0.0),
+                            itemDiscount = d.coerceAtLeast(0.0).coerceAtMost(q * p),
+                            customVariation = editVariation.trim()
                         )
                         editingCartItem = null
                     },
@@ -716,7 +716,8 @@ fun SalesPosScreen(
     // GLOBAL DISCOUNT DIALOG
     // ----------------------------------------------------
     if (showDiscountDialog) {
-        var discVal by remember { mutableStateOf(if (discountAmount > 0) discountAmount.toString() else "") }
+        var discVal by remember { mutableStateOf(if (discountAmount > 0) "%.2f".format(discountAmount) else "") }
+        var discError by remember { mutableStateOf<String?>(null) }
 
         AlertDialog(
             onDismissRequest = { showDiscountDialog = false },
@@ -724,10 +725,32 @@ fun SalesPosScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Current Subtotal: $currency %.2f".format(subtotal), fontSize = 13.sp, color = Navy700)
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(5, 10, 15, 20).forEach { pct ->
+                            SuggestionChip(
+                                onClick = {
+                                    val calc = (subtotal * pct) / 100.0
+                                    discVal = "%.2f".format(calc)
+                                    discError = null
+                                },
+                                label = { Text("$pct%") }
+                            )
+                        }
+                    }
+
                     OutlinedTextField(
                         value = discVal,
-                        onValueChange = { discVal = it },
+                        onValueChange = {
+                            discVal = it
+                            discError = null
+                        },
                         label = { Text("Discount Amount ($currency)") },
+                        placeholder = { Text("e.g. 100 or 10%") },
+                        isError = discError != null,
+                        supportingText = {
+                            if (discError != null) Text(discError!!, color = Rose600, fontSize = 11.sp)
+                        },
                         singleLine = true,
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth().testTag("discount_modal_input")
@@ -737,9 +760,22 @@ fun SalesPosScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val d = discVal.toDoubleOrNull() ?: 0.0
-                        viewModel.setDiscount(d)
-                        showDiscountDialog = false
+                        val clean = discVal.trim()
+                        val parsed = if (clean.endsWith("%")) {
+                            val pctVal = clean.removeSuffix("%").trim().toDoubleOrNull()
+                            if (pctVal != null) (subtotal * pctVal) / 100.0 else null
+                        } else {
+                            clean.toDoubleOrNull()
+                        }
+
+                        if (parsed == null || parsed < 0.0) {
+                            discError = "Please enter a valid positive discount amount."
+                        } else if (parsed > subtotal) {
+                            discError = "Discount cannot exceed subtotal ($currency %.2f)".format(subtotal)
+                        } else {
+                            viewModel.setDiscount(parsed)
+                            showDiscountDialog = false
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                     modifier = Modifier.testTag("apply_discount_button")
@@ -1380,25 +1416,27 @@ fun SalesPosScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Camera Scanner Button
-                        Surface(
-                            onClick = { showCameraScannerDialog = true },
-                            color = Emerald50,
-                            shape = RoundedCornerShape(6.dp),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Emerald300),
-                            modifier = Modifier.testTag("btn_camera_scanner")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                        if (isCameraScannerEnabled) {
+                            Surface(
+                                onClick = { showCameraScannerDialog = true },
+                                color = Emerald50,
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Emerald300),
+                                modifier = Modifier.testTag("btn_camera_scanner")
                             ) {
-                                Icon(Icons.Default.CameraAlt, contentDescription = "Camera Scanner", tint = Emerald700, modifier = Modifier.size(13.dp))
-                                Text(
-                                    text = "Scan",
-                                    color = Emerald800,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold
-                                )
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
+                                    Icon(Icons.Default.CameraAlt, contentDescription = "Camera Scanner", tint = Emerald700, modifier = Modifier.size(13.dp))
+                                    Text(
+                                        text = "Scan",
+                                        color = Emerald800,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
                             }
                         }
 
@@ -1533,16 +1571,18 @@ fun SalesPosScreen(
                                     Icon(Icons.Default.Close, contentDescription = "Clear", tint = Navy500, modifier = Modifier.size(16.dp))
                                 }
                             }
-                            IconButton(
-                                onClick = { showCameraScannerDialog = true },
-                                modifier = Modifier.size(36.dp).testTag("camera_scan_button")
-                            ) {
-                                Icon(
-                                    Icons.Default.QrCodeScanner,
-                                    contentDescription = "Camera Barcode Scanner",
-                                    tint = Emerald600,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                            if (isCameraScannerEnabled) {
+                                IconButton(
+                                    onClick = { showCameraScannerDialog = true },
+                                    modifier = Modifier.size(36.dp).testTag("camera_scan_button")
+                                ) {
+                                    Icon(
+                                        Icons.Default.QrCodeScanner,
+                                        contentDescription = "Camera Barcode Scanner",
+                                        tint = Emerald600,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         }
                     },

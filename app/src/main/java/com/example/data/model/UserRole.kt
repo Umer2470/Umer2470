@@ -57,11 +57,10 @@ enum class UserRole(
                 "inventory", "purchases", "suppliers", "closing" -> userRole.level >= SUPERVISOR.level
 
                 // Reports, Cashier Management, General Settings, Recycle Bin, Setup are accessible to Admin and above
-                "reports", "cashier_management", "settings", "recycle_bin", "setup", "logs" -> userRole.level >= ADMIN.level
+                "reports", "cashier_management", "settings", "recycle_bin", "setup", "logs", "store_management" -> userRole.level >= ADMIN.level
 
-                // User Management, Store Access Management, Owner Control Center, License Activation, Developer Hub require Super Admin / Admin
-                "users", "access_management", "store_management" -> userRole.level >= ADMIN.level
-                "owner_control_center", "activation", "developer_hub" -> userRole == SUPER_ADMIN || userRole == ADMIN
+                // User & Security Management, Store Access Management, Owner Control Center, License Activation, Developer Hub require Super Admin
+                "users", "access_management", "owner_control_center", "activation", "developer_hub" -> userRole == SUPER_ADMIN
 
                 "dashboard" -> true
                 else -> true

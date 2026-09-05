@@ -41,6 +41,7 @@ fun UserManagementScreen(
 
     var showAddEditDialog by remember { mutableStateOf(false) }
     var showQuickRenameDialog by remember { mutableStateOf(false) }
+    var showResetPinUser by remember { mutableStateOf<User?>(null) }
     var selectedUserForEdit by remember { mutableStateOf<User?>(null) }
     var searchQuery by remember { mutableStateOf("") }
     var selectedTab by remember { mutableStateOf(CashierFilterTab.ALL) }
@@ -71,8 +72,8 @@ fun UserManagementScreen(
     Scaffold(
         topBar = {
             AppHeader(
-                title = "Cashier & Staff Management",
-                subtitle = "${users.count { it.isActive }} Active • ${users.size} Total Staff",
+                title = "User & Security Management",
+                subtitle = "${users.count { it.isActive }} Active • Role-Based Credentials & Access",
                 onBackClick = onNavigateBack
             )
         },
@@ -443,33 +444,60 @@ fun UserManagementScreen(
                                         }
                                     )
 
-                                    Button(
-                                        onClick = {
-                                            val targetName = user.fullName.ifBlank { user.username }
-                                            viewModel.setActiveCashierName(targetName, user)
-                                            bannerSuccessMsg = "Active POS Cashier set to '$targetName'"
-                                        },
-                                        enabled = user.isActive && !isCashierActive,
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = if (isCashierActive) Emerald600 else Navy900,
-                                            disabledContainerColor = if (isCashierActive) Emerald100 else Slate200,
-                                            disabledContentColor = if (isCashierActive) Emerald700 else Slate400
-                                        ),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.testTag("select_cashier_${user.id}")
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Icon(
-                                            imageVector = if (isCashierActive) Icons.Default.Check else Icons.Default.HowToReg,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text(
-                                            text = if (isCashierActive) "Selected Active" else "Set as Active",
-                                            fontSize = 12.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                        OutlinedButton(
+                                            onClick = { showResetPinUser = user },
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = Navy900),
+                                            border = androidx.compose.foundation.BorderStroke(1.dp, Slate300),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.testTag("reset_pin_button_${user.id}")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Key,
+                                                contentDescription = "Change PIN",
+                                                tint = Navy700,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Change PIN",
+                                                fontSize = 11.5.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                val targetName = user.fullName.ifBlank { user.username }
+                                                viewModel.setActiveCashierName(targetName, user)
+                                                bannerSuccessMsg = "Active POS Cashier set to '$targetName'"
+                                            },
+                                            enabled = user.isActive && !isCashierActive,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (isCashierActive) Emerald600 else Navy900,
+                                                disabledContainerColor = if (isCashierActive) Emerald100 else Slate200,
+                                                disabledContentColor = if (isCashierActive) Emerald700 else Slate400
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.testTag("select_cashier_${user.id}")
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isCashierActive) Icons.Default.Check else Icons.Default.HowToReg,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = if (isCashierActive) "Selected Active" else "Set as Active",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -630,7 +658,7 @@ fun UserManagementScreen(
                                 errorMsg = null
                             },
                             label = { Text("Terminal PIN / Password *") },
-                            placeholder = { Text("e.g. 1234") },
+                            placeholder = { Text("Minimum 4 characters") },
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
                             modifier = Modifier
@@ -743,6 +771,141 @@ fun UserManagementScreen(
                 },
                 dismissButton = {
                     TextButton(onClick = { showAddEditDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        // Dedicated PIN / Credential Reset Dialog
+        if (showResetPinUser != null) {
+            val targetUser = showResetPinUser!!
+            var newPinValue by remember { mutableStateOf("") }
+            var confirmPinValue by remember { mutableStateOf("") }
+            var pinVisible by remember { mutableStateOf(false) }
+            var resetError by remember { mutableStateOf<String?>(null) }
+            var isResetting by remember { mutableStateOf(false) }
+
+            AlertDialog(
+                onDismissRequest = { if (!isResetting) showResetPinUser = null },
+                title = {
+                    Text(
+                        text = "Change Credential: ${targetUser.fullName.ifBlank { targetUser.username }}",
+                        fontWeight = FontWeight.Bold,
+                        color = Navy900
+                    )
+                },
+                text = {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Surface(
+                            color = Slate100,
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "Account: @${targetUser.username} • Role: ${targetUser.role}",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Navy800
+                                )
+                                Text(
+                                    text = "When updated, the previous PIN immediately stops working. Plaintext credentials are never shown.",
+                                    fontSize = 11.sp,
+                                    color = Navy600
+                                )
+                            }
+                        }
+
+                        OutlinedTextField(
+                            value = newPinValue,
+                            onValueChange = {
+                                newPinValue = it
+                                resetError = null
+                            },
+                            label = { Text("New PIN / Password *") },
+                            placeholder = { Text("Minimum 4 digits") },
+                            trailingIcon = {
+                                IconButton(onClick = { pinVisible = !pinVisible }) {
+                                    Icon(
+                                        imageVector = if (pinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                        contentDescription = null,
+                                        tint = Slate500
+                                    )
+                                }
+                            },
+                            visualTransformation = if (pinVisible) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dialog_new_pin_input")
+                        )
+
+                        OutlinedTextField(
+                            value = confirmPinValue,
+                            onValueChange = {
+                                confirmPinValue = it
+                                resetError = null
+                            },
+                            label = { Text("Confirm New PIN / Password *") },
+                            placeholder = { Text("Re-enter new PIN") },
+                            visualTransformation = if (pinVisible) androidx.compose.ui.text.input.VisualTransformation.None else PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dialog_confirm_pin_input")
+                        )
+
+                        if (resetError != null) {
+                            Text(
+                                text = resetError!!,
+                                color = Rose600,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val cleanNew = newPinValue.trim()
+                            val cleanConfirm = confirmPinValue.trim()
+                            if (cleanNew.length < 4) {
+                                resetError = "PIN must be at least 4 digits/characters."
+                                return@Button
+                            }
+                            if (cleanNew != cleanConfirm) {
+                                resetError = "PINs do not match. Please re-enter."
+                                return@Button
+                            }
+
+                            isResetting = true
+                            viewModel.updateUserPin(targetUser.id, cleanNew) { success, msg ->
+                                isResetting = false
+                                if (success) {
+                                    bannerSuccessMsg = "PIN updated successfully for '${targetUser.fullName.ifBlank { targetUser.username }}'. Old PIN invalidated."
+                                    showResetPinUser = null
+                                } else {
+                                    resetError = msg
+                                }
+                            }
+                        },
+                        enabled = !isResetting,
+                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                        modifier = Modifier.testTag("confirm_update_pin_button")
+                    ) {
+                        Text("Update Credential")
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showResetPinUser = null },
+                        enabled = !isResetting
+                    ) {
                         Text("Cancel")
                     }
                 }

@@ -44,10 +44,12 @@ data class InvoiceCustomer(
 )
 
 data class InvoiceItem(
+    val serialNumber: Int = 1,
     val productName: String,
     val quantity: Double,
     val unit: String,
     val unitPrice: Double,
+    val discount: Double = 0.0,
     val totalPrice: Double
 )
 
@@ -81,12 +83,15 @@ object InvoiceFormattingService {
             else -> "Not Assigned"
         }
 
-        val invoiceItems = items.map { item ->
+        val invoiceItems = items.mapIndexed { index, item ->
+            val calculatedLineDisc = (item.quantity * item.salePrice - item.totalPrice).coerceAtLeast(0.0)
             InvoiceItem(
+                serialNumber = index + 1,
                 productName = item.productName,
                 quantity = item.quantity,
-                unit = item.unit,
+                unit = item.unit.ifBlank { "Unit" },
                 unitPrice = item.salePrice,
+                discount = calculatedLineDisc,
                 totalPrice = item.totalPrice
             )
         }
@@ -173,12 +178,12 @@ object InvoiceFormattingService {
             appendLine(row("Customer:", invoice.customer.name))
             appendLine(row("Pay Mode:", invoice.meta.paymentType))
             appendLine(divider)
-            appendLine(row("Item (Qty x Rate)", "Total"))
+            appendLine(row("S.No Item (Qty x Rate)", "Total"))
             appendLine(divider)
 
             for (item in invoice.items) {
-                val line1 = item.productName
-                val line2Left = "  %.1f %s x %.2f".format(item.quantity, item.unit, item.unitPrice)
+                val line1 = "${item.serialNumber}. ${item.productName}"
+                val line2Left = "   %.1f %s x %.2f".format(item.quantity, item.unit, item.unitPrice)
                 val line2Right = "%.2f".format(item.totalPrice)
                 appendLine(line1)
                 appendLine(row(line2Left, line2Right))

@@ -202,7 +202,7 @@ object PdfGenerator {
         // 3. Table Header Bar
         val tableHeaderRect = RectF(40f, y - 10f, 555f, y + 12f)
         canvas.drawRoundRect(tableHeaderRect, 4f, 4f, headerBarPaint)
-        canvas.drawText("#", 50f, y + 5f, whiteBoldPaint)
+        canvas.drawText("S.No", 48f, y + 5f, whiteBoldPaint)
         canvas.drawText("Item Description", 80f, y + 5f, whiteBoldPaint)
         canvas.drawText("Qty", 310f, y + 5f, whiteBoldPaint)
         canvas.drawText("Unit Rate", 380f, y + 5f, whiteBoldPaint)
@@ -215,12 +215,12 @@ object PdfGenerator {
             style = Paint.Style.FILL
         }
 
-        for ((index, item) in invoice.items.withIndex()) {
-            if (index % 2 == 1) {
+        for (item in invoice.items) {
+            if (item.serialNumber % 2 == 0) {
                 val rowRect = RectF(40f, y - 9f, 555f, y + 11f)
                 canvas.drawRect(rowRect, rowPaint)
             }
-            canvas.drawText("${index + 1}", 50f, y + 4f, mutedPaint)
+            canvas.drawText("${item.serialNumber}", 48f, y + 4f, mutedPaint)
             canvas.drawText(item.productName.take(38), 80f, y + 4f, basePaint)
             canvas.drawText("%.1f %s".format(item.quantity, item.unit), 310f, y + 4f, basePaint)
             canvas.drawText("%.2f".format(item.unitPrice), 380f, y + 4f, basePaint)
@@ -415,7 +415,8 @@ object PdfGenerator {
         y += 12f
 
         // Items Header
-        canvas.drawText("Item", margin, y, boldLeft)
+        canvas.drawText("S.No", margin, y, boldLeft)
+        canvas.drawText("Item", margin + 26f, y, boldLeft)
         canvas.drawText("Qty", 120f, y, boldLeft)
         canvas.drawText("Rate", 160f, y, boldLeft)
         canvas.drawText("Total", rightMargin, y, boldRight)
@@ -425,7 +426,8 @@ object PdfGenerator {
 
         // Items
         for (item in invoice.items) {
-            canvas.drawText(item.productName.take(16), margin, y, textLeft)
+            canvas.drawText("${item.serialNumber}", margin, y, textLeft)
+            canvas.drawText(item.productName.take(13), margin + 26f, y, textLeft)
             canvas.drawText("%.1f".format(item.quantity), 120f, y, textLeft)
             canvas.drawText("%.0f".format(item.unitPrice), 160f, y, textLeft)
             canvas.drawText("%.2f".format(item.totalPrice), rightMargin, y, textRight)

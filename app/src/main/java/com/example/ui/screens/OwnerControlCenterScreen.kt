@@ -227,7 +227,7 @@ fun OwnerControlCenterScreen(
                                     }
                                 },
                                 label = { Text("Owner Security PIN") },
-                                placeholder = { Text("e.g. 9999 or Admin PIN") },
+                                placeholder = { Text("Enter Owner PIN or Super Admin PIN") },
                                 visualTransformation = PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                                 singleLine = true,
@@ -236,7 +236,7 @@ fun OwnerControlCenterScreen(
                                     if (pinError != null) {
                                         Text(pinError!!, color = Rose600)
                                     } else {
-                                        Text("Default PIN: 9999 or Admin PIN (1234)", fontSize = 11.sp, color = Navy400)
+                                        Text("Enter Owner Security PIN or Super Admin PIN", fontSize = 11.sp, color = Navy400)
                                     }
                                 },
                                 shape = RoundedCornerShape(10.dp),
@@ -1024,7 +1024,7 @@ fun OwnerControlCenterScreen(
                     value = staffNewPin,
                     onValueChange = { if (it.length <= 8) staffNewPin = it },
                     label = { Text("New PIN") },
-                    placeholder = { Text("e.g. 1234") },
+                    placeholder = { Text("Enter 4-8 digits") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("input_staff_new_pin")

@@ -212,21 +212,18 @@ fun GuardedScreen(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "Enter Supervisor or Admin credentials to temporarily unlock this module:",
+                                    text = "Enter authorized PIN to temporarily unlock this module:",
                                     fontSize = 12.sp,
                                     color = Navy600
                                 )
                                 OutlinedTextField(
-                                    value = overrideUsername,
-                                    onValueChange = { overrideUsername = it },
-                                    label = { Text("Supervisor Username") },
-                                    singleLine = true,
-                                    modifier = Modifier.fillMaxWidth().testTag("override_username_input")
-                                )
-                                OutlinedTextField(
                                     value = overridePin,
-                                    onValueChange = { overridePin = it },
-                                    label = { Text("Supervisor PIN") },
+                                    onValueChange = {
+                                        overridePin = it
+                                        overrideError = null
+                                    },
+                                    label = { Text("Supervisor / Admin PIN") },
+                                    placeholder = { Text("Enter credential") },
                                     visualTransformation = PasswordVisualTransformation(),
                                     singleLine = true,
                                     modifier = Modifier.fillMaxWidth().testTag("override_pin_input")
@@ -244,10 +241,19 @@ fun GuardedScreen(
                         confirmButton = {
                             Button(
                                 onClick = {
-                                    viewModel.login(overrideUsername, overridePin) { success, msg ->
-                                        if (success) {
-                                            isOverrideSuccess = true
-                                            showOverrideDialog = false
+                                    if (overridePin.isBlank()) {
+                                        overrideError = "Please enter credential."
+                                        return@Button
+                                    }
+                                    viewModel.loginWithSingleCredential(overridePin) { success, msg, user ->
+                                        if (success && user != null) {
+                                            val overrideRole = UserRole.fromString(user.role)
+                                            if (UserRole.isAllowed(overrideRole, route)) {
+                                                isOverrideSuccess = true
+                                                showOverrideDialog = false
+                                            } else {
+                                                overrideError = "User '${user.username}' (${overrideRole.displayName}) does not have permission for this module."
+                                            }
                                         } else {
                                             overrideError = msg
                                         }
@@ -276,23 +282,33 @@ fun AppNavigation(
     viewModel: StoreViewModel,
     navController: NavHostController = rememberNavController()
 ) {
+    val isActivated by viewModel.isActivatedFlow.collectAsState()
     val isAppLocked by viewModel.isAppLocked.collectAsState()
+    val activeUser by viewModel.activeUser.collectAsState()
+    val currentRole by viewModel.currentRole.collectAsState()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val cart by viewModel.cart.collectAsState()
     val cartItemCount = cart.sumOf { it.quantity }.toInt()
 
-    if (isAppLocked) {
+    if (!isActivated) {
+        CustomerActivationScreen(
+            viewModel = viewModel,
+            onNavigateBack = null
+        )
+    } else if (isAppLocked || activeUser == null) {
         LoginScreen(
             viewModel = viewModel,
             onLoginSuccess = { viewModel.unlockTerminal() }
         )
     } else {
         Scaffold(
+            contentWindowInsets = WindowInsets.safeDrawing,
             bottomBar = {
                 AppBottomNavigationBar(
                     currentRoute = currentRoute,
                     cartItemCount = cartItemCount,
+                    userRole = currentRole,
                     onNavigate = { targetRoute ->
                         if (currentRoute != targetRoute) {
                             navController.navigate(targetRoute) {
@@ -309,8 +325,10 @@ fun AppNavigation(
         ) { innerPadding ->
             NavHost(
                 navController = navController,
-                startDestination = Screen.Dashboard.route,
-                modifier = Modifier.padding(innerPadding)
+                startDestination = if (currentRole == UserRole.CASHIER) Screen.Pos.route else Screen.Dashboard.route,
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .imePadding()
             ) {
                 composable(Screen.Dashboard.route) {
                     DashboardScreen(

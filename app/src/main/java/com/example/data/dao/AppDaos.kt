@@ -51,6 +51,9 @@ interface SaleDao {
     @Query("SELECT * FROM sale_items WHERE saleId = :saleId")
     suspend fun getItemsForSale(saleId: Long): List<SaleItem>
 
+    @Query("SELECT * FROM sale_items")
+    fun getAllSaleItemsFlow(): Flow<List<SaleItem>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertSaleItems(items: List<SaleItem>)
 
@@ -161,6 +164,12 @@ interface StoreSettingsDao {
 interface UserDao {
     @Query("SELECT * FROM users ORDER BY fullName ASC")
     fun getAllUsersFlow(): Flow<List<User>>
+
+    @Query("SELECT * FROM users ORDER BY fullName ASC")
+    suspend fun getAllUsers(): List<User>
+
+    @Query("SELECT * FROM users WHERE isActive = 1 ORDER BY fullName ASC")
+    suspend fun getActiveUsers(): List<User>
 
     @Query("SELECT * FROM users WHERE username = :username LIMIT 1")
     suspend fun getUserByUsername(username: String): User?

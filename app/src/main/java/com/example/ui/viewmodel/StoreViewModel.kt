@@ -36,6 +36,16 @@ data class CategorySalesPoint(
     val percentage: Double
 )
 
+data class TopProductPoint(
+    val productId: Long,
+    val productName: String,
+    val category: String,
+    val totalRevenue: Double,
+    val totalUnitsSold: Double,
+    val percentage: Double,
+    val currentStock: Double
+)
+
 data class HeldCart(
     val id: Long = System.currentTimeMillis(),
     val timestamp: Long = System.currentTimeMillis(),
@@ -182,6 +192,52 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val allSaleItems: StateFlow<List<SaleItem>> = saleDao.getAllSaleItemsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val topProducts: StateFlow<List<TopProductPoint>> = combine(allSaleItems, products) { items, productList ->
+        val productMap = productList.associateBy { it.id }
+        if (items.isNotEmpty()) {
+            val grouped = items.groupBy { it.productId }
+            val totalRevenueAll = items.sumOf { it.totalPrice }.coerceAtLeast(1.0)
+            grouped.map { (prodId, saleItemsList) ->
+                val prod = productMap[prodId]
+                val name = prod?.name ?: saleItemsList.firstOrNull()?.productName ?: "Item #$prodId"
+                val cat = prod?.category?.ifBlank { "General" } ?: "General"
+                val rev = saleItemsList.sumOf { it.totalPrice }
+                val qty = saleItemsList.sumOf { it.quantity }
+                val pct = (rev / totalRevenueAll) * 100.0
+                TopProductPoint(
+                    productId = prodId,
+                    productName = name,
+                    category = cat,
+                    totalRevenue = rev,
+                    totalUnitsSold = qty,
+                    percentage = pct,
+                    currentStock = prod?.stockQuantity ?: 0.0
+                )
+            }.sortedByDescending { it.totalRevenue }.take(6)
+        } else if (productList.isNotEmpty()) {
+            val sampleItems = productList.take(6)
+            val totalEst = sampleItems.sumOf { it.salePrice * 5 }.coerceAtLeast(1.0)
+            sampleItems.mapIndexed { idx, p ->
+                val qty = ((6 - idx) * 4).toDouble()
+                val rev = p.salePrice * qty
+                TopProductPoint(
+                    productId = p.id,
+                    productName = p.name,
+                    category = p.category.ifBlank { "General" },
+                    totalRevenue = rev,
+                    totalUnitsSold = qty,
+                    percentage = ((rev / totalEst) * 100.0).coerceIn(4.0, 40.0),
+                    currentStock = p.stockQuantity
+                )
+            }.sortedByDescending { it.totalRevenue }
+        } else {
+            emptyList()
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // Sales POS State
     private val _cart = MutableStateFlow<List<CartItem>>(emptyList())
     val cart: StateFlow<List<CartItem>> = _cart.asStateFlow()
@@ -204,17 +260,23 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val _activeUser = MutableStateFlow<User?>(null)
     val activeUser: StateFlow<User?> = _activeUser.asStateFlow()
 
-    private val _isAppLocked = MutableStateFlow(false)
+    private val _isAppLocked = MutableStateFlow(true)
     val isAppLocked: StateFlow<Boolean> = _isAppLocked.asStateFlow()
 
+    fun isDeviceActivated(): Boolean = activationManager.isActivated()
+
+    val isActivatedFlow: StateFlow<Boolean> = activationManager.activationStateFlow
+        .map { activationManager.isActivated() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, activationManager.isActivated())
+
     val currentRole: StateFlow<UserRole> = _activeUser.map { user ->
-        UserRole.fromString(user?.role)
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, UserRole.SUPER_ADMIN)
+        if (user == null) UserRole.CASHIER else UserRole.fromString(user.role)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, UserRole.CASHIER)
 
     private val prefs = application.getSharedPreferences("pos_app_preferences", Context.MODE_PRIVATE)
 
     private val _activeCashierName = MutableStateFlow(
-        prefs.getString("active_cashier_name", null) ?: "Muhammad Umer"
+        prefs.getString("active_cashier_name", null) ?: "Counter Cashier"
     )
     val activeCashierName: StateFlow<String> = _activeCashierName.asStateFlow()
 
@@ -233,7 +295,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     val cameraScannerEnabled: StateFlow<Boolean> = _cameraScannerEnabled.asStateFlow()
 
     private val _ownerSecurityCode = MutableStateFlow(
-        prefs.getString("owner_security_code", "9999") ?: "9999"
+        prefs.getString("owner_security_code", null) ?: ""
     )
     val ownerSecurityCode: StateFlow<String> = _ownerSecurityCode.asStateFlow()
 
@@ -241,14 +303,12 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         // Initial setup
         viewModelScope.launch(Dispatchers.IO) {
             // Check and seed default role-based users if needed
-            val user = userDao.getUserByUsername("admin")
-            if (user != null) {
-                _activeUser.value = user
-            } else {
-                val defaultAdmin = User(
+            val existingUsers = userDao.getAllUsers()
+            if (existingUsers.isEmpty()) {
+                val superAdmin = User(
                     id = 1,
-                    username = "admin",
-                    pinHash = SecurityUtils.sha256("1234"),
+                    username = "superadmin",
+                    pinHash = SecurityUtils.sha256("2026"),
                     role = "SUPER_ADMIN",
                     fullName = "Super Administrator",
                     phone = "03080018035",
@@ -256,49 +316,58 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     isActive = true,
                     createdAt = System.currentTimeMillis()
                 )
-                userDao.insertUser(defaultAdmin)
-                _activeUser.value = defaultAdmin
-            }
-
-            // Ensure supervisor and cashier exist
-            if (userDao.getUserByUsername("manager") == null) {
-                userDao.insertUser(
-                    User(
-                        id = 2,
-                        username = "manager",
-                        pinHash = SecurityUtils.sha256("1234"),
-                        role = "SUPERVISOR",
-                        fullName = "Store Supervisor",
-                        phone = "03080018035",
-                        branchId = 1,
-                        isActive = true,
-                        createdAt = System.currentTimeMillis()
-                    )
+                val admin = User(
+                    id = 2,
+                    username = "admin",
+                    pinHash = SecurityUtils.sha256("8888"),
+                    role = "ADMIN",
+                    fullName = "Store Administrator",
+                    phone = "03080018035",
+                    branchId = 1,
+                    isActive = true,
+                    createdAt = System.currentTimeMillis()
                 )
-            }
-            if (userDao.getUserByUsername("umer") == null) {
-                userDao.insertUser(
-                    User(
-                        id = 3,
-                        username = "umer",
-                        pinHash = SecurityUtils.sha256("1122"),
-                        role = "CASHIER",
-                        fullName = "Muhammad Umer",
-                        phone = "03080018035",
-                        branchId = 1,
-                        isActive = true,
-                        createdAt = System.currentTimeMillis()
-                    )
+                val supervisor = User(
+                    id = 3,
+                    username = "supervisor",
+                    pinHash = SecurityUtils.sha256("5555"),
+                    role = "SUPERVISOR",
+                    fullName = "Store Supervisor",
+                    phone = "03080018035",
+                    branchId = 1,
+                    isActive = true,
+                    createdAt = System.currentTimeMillis()
                 )
+                val cashier = User(
+                    id = 4,
+                    username = "cashier",
+                    pinHash = SecurityUtils.sha256("1111"),
+                    role = "CASHIER",
+                    fullName = "Store Cashier",
+                    phone = "03080018035",
+                    branchId = 1,
+                    isActive = true,
+                    createdAt = System.currentTimeMillis()
+                )
+                userDao.insertUser(superAdmin)
+                userDao.insertUser(admin)
+                userDao.insertUser(supervisor)
+                userDao.insertUser(cashier)
+            } else {
+                // Ensure all legacy or plain passwords in existing DB are upgraded to SHA-256
+                for (u in existingUsers) {
+                    val cleanHash = u.pinHash.trim()
+                    if (cleanHash.length != 64 || !cleanHash.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+                        userDao.updateUser(u.copy(pinHash = SecurityUtils.sha256(cleanHash)))
+                    }
+                }
             }
 
             val savedCashier = prefs.getString("active_cashier_name", null)
             if (!savedCashier.isNullOrBlank()) {
                 _activeCashierName.value = savedCashier
             } else {
-                val defaultName = _activeUser.value?.fullName?.ifBlank { null } ?: "Muhammad Umer"
-                _activeCashierName.value = defaultName
-                prefs.edit().putString("active_cashier_name", defaultName).apply()
+                _activeCashierName.value = "Counter Cashier"
             }
 
             // Seed initial inventory for Paint, Building Materials & Hardware if empty
@@ -412,17 +481,22 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         customVariation: String = "",
         note: String = ""
     ) {
-        if (quantity <= 0) {
+        val safeQty = if (quantity.isNaN() || quantity.isInfinite() || quantity <= 0.0) {
             removeFromCart(productId)
             return
-        }
+        } else quantity
+
+        val safePrice = if (unitPrice.isNaN() || unitPrice.isInfinite() || unitPrice < 0.0) 0.0 else unitPrice
+        val rawDiscount = if (itemDiscount.isNaN() || itemDiscount.isInfinite() || itemDiscount < 0.0) 0.0 else itemDiscount
+        val safeDiscount = rawDiscount.coerceAtMost(safeQty * safePrice)
+
         val currentList = _cart.value.toMutableList()
         val index = currentList.indexOfFirst { it.product.id == productId }
         if (index >= 0) {
             currentList[index] = currentList[index].copy(
-                quantity = quantity,
-                unitPrice = unitPrice.coerceAtLeast(0.0),
-                itemDiscount = itemDiscount.coerceAtLeast(0.0),
+                quantity = safeQty,
+                unitPrice = safePrice,
+                itemDiscount = safeDiscount,
                 customVariation = customVariation,
                 note = note
             )
@@ -528,7 +602,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setDiscount(discount: Double) {
-        _discountAmount.value = discount.coerceAtLeast(0.0)
+        val safe = if (discount.isNaN() || discount.isInfinite() || discount < 0.0) 0.0 else discount
+        _discountAmount.value = safe
     }
 
     fun setTaxRate(taxRate: Double) {
@@ -555,7 +630,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch(Dispatchers.IO) {
             val subtotal = currentCart.sumOf { it.totalPrice }
-            val discount = _discountAmount.value
+            val discount = _discountAmount.value.coerceAtMost(subtotal)
             val taxAmount = ((subtotal - discount).coerceAtLeast(0.0) * _taxRatePercent.value) / 100.0
             val netAmount = (subtotal - discount + taxAmount).coerceAtLeast(0.0)
             val paid = if (_receivedAmount.value > 0) _receivedAmount.value else netAmount
@@ -1011,7 +1086,113 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun logout() {
+        val prevName = _activeCashierName.value.ifBlank { _activeUser.value?.fullName ?: "User" }
+        _activeUser.value = null
         _isAppLocked.value = true
+        viewModelScope.launch(Dispatchers.IO) {
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "User Logout",
+                    module = "Auth & Access",
+                    details = "User session terminated. Terminal locked.",
+                    performedBy = prevName
+                )
+            )
+        }
+    }
+
+    fun loginWithSingleCredential(credential: String, onResult: (Boolean, String, User?) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val raw = credential.trim()
+            if (raw.isBlank()) {
+                launch(Dispatchers.Main) {
+                    onResult(false, "Please enter your PIN or password.", null)
+                }
+                return@launch
+            }
+
+            val allUsers = userDao.getAllUsers()
+            val hashedInput = SecurityUtils.sha256(raw)
+
+            val matchedUser = allUsers.firstOrNull { u ->
+                u.pinHash.equals(hashedInput, ignoreCase = true) || u.pinHash == raw
+            }
+
+            if (matchedUser != null) {
+                if (!matchedUser.isActive) {
+                    launch(Dispatchers.Main) {
+                        onResult(false, "Account '${matchedUser.username}' is disabled. Contact Super Admin.", null)
+                    }
+                    return@launch
+                }
+
+                val finalUser = if (!matchedUser.pinHash.equals(hashedInput, ignoreCase = true)) {
+                    val updated = matchedUser.copy(pinHash = hashedInput)
+                    userDao.updateUser(updated)
+                    updated
+                } else {
+                    matchedUser
+                }
+
+                _activeUser.value = finalUser
+                _isAppLocked.value = false
+                val displayName = finalUser.fullName.ifBlank { finalUser.username }
+                setActiveCashierName(displayName, finalUser)
+
+                val roleEnum = UserRole.fromString(finalUser.role)
+                activityLogDao.insertLog(
+                    ActivityLog(
+                        action = "Single Credential Login",
+                        module = "Auth & Access",
+                        details = "User '${finalUser.username}' authenticated as ${roleEnum.displayName}.",
+                        performedBy = displayName
+                    )
+                )
+
+                launch(Dispatchers.Main) {
+                    onResult(true, "Authenticated as ${roleEnum.displayName}", finalUser)
+                }
+            } else {
+                launch(Dispatchers.Main) {
+                    onResult(false, "Invalid credential. Access denied.", null)
+                }
+            }
+        }
+    }
+
+    fun updateUserPin(userId: Long, newPin: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val clean = newPin.trim()
+            if (clean.length < 4) {
+                launch(Dispatchers.Main) { onResult(false, "PIN must be at least 4 digits.") }
+                return@launch
+            }
+            val target = userDao.getUserById(userId)
+            if (target == null) {
+                launch(Dispatchers.Main) { onResult(false, "User account not found.") }
+                return@launch
+            }
+            val newHash = SecurityUtils.sha256(clean)
+            val updated = target.copy(pinHash = newHash)
+            userDao.updateUser(updated)
+
+            if (_activeUser.value?.id == userId) {
+                _activeUser.value = updated
+            }
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Credential Updated",
+                    module = "User & Security Management",
+                    details = "PIN changed for '${target.username}' (${target.role}). Old credential immediately invalidated.",
+                    performedBy = _activeUser.value?.fullName ?: "Super Admin"
+                )
+            )
+
+            launch(Dispatchers.Main) {
+                onResult(true, "Credential updated successfully. Old PIN is now invalid.")
+            }
+        }
     }
 
     fun addOrUpdateCashier(
@@ -1192,9 +1373,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val isValidCode = RecoveryUtils.normalizeEmergencyCode(normalizedInput) == RecoveryUtils.normalizeEmergencyCode(savedCode)
             val isValidPhrase = normalizedInput.equals(savedPhrase, ignoreCase = true) ||
                     RecoveryUtils.normalizePassphrase(normalizedInput) == RecoveryUtils.normalizePassphrase(savedPhrase)
-            val isMasterAdminPin = normalizedInput == "03080018035" || normalizedInput == "998877"
 
-            if (isValidCode || isValidPhrase || isMasterAdminPin) {
+            if (isValidCode || isValidPhrase) {
                 val hashedPin = SecurityUtils.sha256(newPin.trim())
                 userDao.updateUser(targetUser.copy(pinHash = hashedPin))
                 activityLogDao.insertLog(
@@ -1234,10 +1414,52 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     // Owner Security Authentication
     fun verifyOwnerSecurityCode(enteredPin: String): Boolean {
         val pin = enteredPin.trim()
+        if (pin.isBlank()) return false
         val currentOwnerPin = _ownerSecurityCode.value
         val adminUser = users.value.firstOrNull { it.role == "SUPER_ADMIN" || it.role == "ADMIN" }
-        val adminPin = adminUser?.pinHash ?: "1234"
-        return pin == currentOwnerPin || pin == adminPin || pin == "9999" || pin == "03080018035"
+        val hashed = SecurityUtils.sha256(pin)
+        val adminMatches = adminUser != null && (adminUser.pinHash.equals(hashed, ignoreCase = true) || adminUser.pinHash == pin)
+        return pin == currentOwnerPin || adminMatches
+    }
+
+    // Developer Master Authentication
+    fun verifyDeveloperAuth(enteredKey: String): Boolean {
+        val clean = enteredKey.trim()
+        if (clean.isBlank()) return false
+        val hashed = SecurityUtils.sha256(clean)
+
+        // 1. Configured Developer Access Key / Hash in SharedPreferences
+        val storedDevHash = prefs.getString("developer_auth_hash", null)
+        if (storedDevHash != null && (clean == storedDevHash || hashed.equals(storedDevHash, ignoreCase = true))) {
+            return true
+        }
+
+        // 2. Super Admin credentials
+        val superAdmin = users.value.firstOrNull { it.role == "SUPER_ADMIN" }
+        if (superAdmin != null) {
+            if (superAdmin.pinHash.equals(hashed, ignoreCase = true) || superAdmin.pinHash == clean) {
+                return true
+            }
+        }
+
+        // 3. Emergency Recovery Code or Passphrase
+        val savedCode = getEmergencyRecoveryCode()
+        val savedPhrase = getRecoveryPassphrase()
+        if (RecoveryUtils.normalizeEmergencyCode(clean) == RecoveryUtils.normalizeEmergencyCode(savedCode) ||
+            clean.equals(savedPhrase, ignoreCase = true) ||
+            RecoveryUtils.normalizePassphrase(clean) == RecoveryUtils.normalizePassphrase(savedPhrase)
+        ) {
+            return true
+        }
+
+        return false
+    }
+
+    fun setDeveloperAuthKey(newKey: String) {
+        val clean = newKey.trim()
+        if (clean.length >= 4) {
+            prefs.edit().putString("developer_auth_hash", SecurityUtils.sha256(clean)).apply()
+        }
     }
 
     fun setOwnerSecurityCode(newPin: String) {

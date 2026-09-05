@@ -337,10 +337,11 @@ fun InvoiceReceiptDialog(
                                         .padding(vertical = 6.dp, horizontal = 6.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("Item", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Navy900, modifier = Modifier.weight(2.2f))
-                                    Text("Qty", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Navy900, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
-                                    Text("Rate", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Navy900, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
-                                    Text("Total", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Navy900, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
+                                    Text("S.No", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Navy900, modifier = Modifier.width(32.dp))
+                                    Text("Item", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Navy900, modifier = Modifier.weight(2f))
+                                    Text("Qty", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Navy900, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+                                    Text("Rate", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Navy900, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                    Text("Total", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Navy900, modifier = Modifier.weight(1.1f), textAlign = TextAlign.End)
                                 }
 
                                 printableInvoice.items.forEach { item ->
@@ -350,10 +351,11 @@ fun InvoiceReceiptDialog(
                                             .padding(vertical = 4.dp, horizontal = 6.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text(item.productName, fontSize = 12.sp, color = Navy900, modifier = Modifier.weight(2.2f))
-                                        Text("%.1f %s".format(item.quantity, item.unit), fontSize = 12.sp, color = Navy800, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
-                                        Text("%.2f".format(item.unitPrice), fontSize = 12.sp, color = Navy800, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
-                                        Text("%.2f".format(item.totalPrice), fontSize = 12.sp, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End, fontWeight = FontWeight.Bold, color = Navy900)
+                                        Text("${item.serialNumber}", fontSize = 11.sp, color = Navy700, modifier = Modifier.width(32.dp))
+                                        Text(item.productName, fontSize = 11.sp, color = Navy900, modifier = Modifier.weight(2f))
+                                        Text("%.1f %s".format(item.quantity, item.unit), fontSize = 11.sp, color = Navy800, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
+                                        Text("%.2f".format(item.unitPrice), fontSize = 11.sp, color = Navy800, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text("%.2f".format(item.totalPrice), fontSize = 11.sp, modifier = Modifier.weight(1.1f), textAlign = TextAlign.End, fontWeight = FontWeight.Bold, color = Navy900)
                                     }
                                 }
 
@@ -515,30 +517,34 @@ fun InvoiceReceiptDialog(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(Navy900, RoundedCornerShape(4.dp))
-                                        .padding(vertical = 8.dp, horizontal = 10.dp),
+                                        .padding(vertical = 8.dp, horizontal = 8.dp),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text("#", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White, modifier = Modifier.width(24.dp))
-                                    Text("Item Description", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White, modifier = Modifier.weight(2f))
-                                    Text("Qty", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
-                                    Text("Unit Price", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
-                                    Text("Total Amount", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Color.White, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
+                                    Text("S.No", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White, modifier = Modifier.width(32.dp))
+                                    Text("Product", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White, modifier = Modifier.weight(1.8f))
+                                    Text("Qty", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
+                                    Text("Unit", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
+                                    Text("Price", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                    Text("Discount", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
+                                    Text("Total", fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color.White, modifier = Modifier.weight(1.1f), textAlign = TextAlign.End)
                                 }
 
-                                printableInvoice.items.forEachIndexed { index, item ->
+                                printableInvoice.items.forEach { item ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .background(if (index % 2 == 0) Color.White else Slate50)
-                                            .padding(vertical = 6.dp, horizontal = 10.dp),
+                                            .background(if (item.serialNumber % 2 == 1) Color.White else Slate50)
+                                            .padding(vertical = 6.dp, horizontal = 8.dp),
                                         horizontalArrangement = Arrangement.SpaceBetween,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("${index + 1}", fontSize = 11.sp, color = Navy700, modifier = Modifier.width(24.dp))
-                                        Text(item.productName, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = Navy900, modifier = Modifier.weight(2f))
-                                        Text("%.1f %s".format(item.quantity, item.unit), fontSize = 11.sp, color = Navy800, modifier = Modifier.weight(0.8f), textAlign = TextAlign.Center)
-                                        Text("%.2f".format(item.unitPrice), fontSize = 11.sp, color = Navy800, modifier = Modifier.weight(1f), textAlign = TextAlign.End)
-                                        Text("%.2f".format(item.totalPrice), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Navy900, modifier = Modifier.weight(1.2f), textAlign = TextAlign.End)
+                                        Text("${item.serialNumber}", fontSize = 11.sp, color = Navy700, modifier = Modifier.width(32.dp))
+                                        Text(item.productName, fontSize = 11.sp, fontWeight = FontWeight.Medium, color = Navy900, modifier = Modifier.weight(1.8f))
+                                        Text("%.1f".format(item.quantity), fontSize = 11.sp, color = Navy800, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
+                                        Text(item.unit, fontSize = 11.sp, color = Navy800, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
+                                        Text("%.2f".format(item.unitPrice), fontSize = 11.sp, color = Navy800, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text(if (item.discount > 0) "-%.2f".format(item.discount) else "0.00", fontSize = 11.sp, color = if (item.discount > 0) Rose600 else Navy500, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
+                                        Text("%.2f".format(item.totalPrice), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Navy900, modifier = Modifier.weight(1.1f), textAlign = TextAlign.End)
                                     }
                                 }
 

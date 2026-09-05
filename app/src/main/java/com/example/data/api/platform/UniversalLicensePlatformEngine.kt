@@ -475,25 +475,7 @@ class UniversalLicensePlatformEngine private constructor(private val context: Co
 
         val app = getApplication(cleanAppId)
 
-        // 1. Check if it is an explicit App-Prefixed Universal Code: ACTV-{APP_ID}-{PLAN}-{P1}-{P2}-{P3}
-        if (upperCode.startsWith("ACTV-") && upperCode.contains("-")) {
-            val parts = upperCode.split("-")
-            // Format: ACTV-APPID-... or ACTV-M1-... (Legacy Sentry Store POS)
-            if (parts.size >= 4) {
-                // If code contains explicit application ID tag
-                val potentialAppId = parts.getOrNull(1) ?: ""
-                if (potentialAppId.startsWith("APP") || potentialAppId == "SENTRY" || potentialAppId.contains("POS") || potentialAppId.contains("WORKOUT") || potentialAppId.contains("BUSINESS")) {
-                    if (!potentialAppId.equals(cleanAppId, ignoreCase = true) && !cleanAppId.startsWith(potentialAppId)) {
-                        return LicenseVerificationResult.AppMismatch(
-                            expectedApp = cleanAppId,
-                            actualApp = potentialAppId
-                        )
-                    }
-                }
-            }
-        }
-
-        // 2. Check Universal Engine Active Licenses Store
+        // 1. Check Universal Engine Active Licenses Store first
         val storedLicense = _licensesFlow.value.firstOrNull {
             it.licenseCode.equals(upperCode, ignoreCase = true)
         }
@@ -529,6 +511,26 @@ class UniversalLicensePlatformEngine private constructor(private val context: Co
             }
 
             return LicenseVerificationResult.Valid(storedLicense, "License verified for ${storedLicense.planName}.")
+        }
+
+        // 2. Check if it is an explicit App-Prefixed Universal Code: ACTV-{APP_ID}-{PLAN}-{P1}-{P2}-{P3}
+        if (upperCode.startsWith("ACTV-") && upperCode.contains("-")) {
+            val parts = upperCode.split("-")
+            // Format: ACTV-APPID-... or ACTV-M1-... (Legacy Sentry Store POS)
+            if (parts.size >= 4) {
+                // If code contains explicit application ID tag
+                val potentialAppId = parts.getOrNull(1) ?: ""
+                val matchesApp = cleanAppId.equals(potentialAppId, ignoreCase = true) ||
+                        cleanAppId.contains(potentialAppId, ignoreCase = true) ||
+                        potentialAppId.contains(cleanAppId, ignoreCase = true) ||
+                        (cleanAppId.startsWith("SENTRY") && (potentialAppId == "POS" || potentialAppId == "SENTRY"))
+                if (!matchesApp && (potentialAppId.startsWith("APP") || potentialAppId.contains("POS") || potentialAppId.contains("WORKOUT") || potentialAppId.contains("BUSINESS"))) {
+                    return LicenseVerificationResult.AppMismatch(
+                        expectedApp = cleanAppId,
+                        actualApp = potentialAppId
+                    )
+                }
+            }
         }
 
         // 3. Fallback: Offline Cryptographic Mathematical Algorithm Verification
@@ -570,11 +572,11 @@ class UniversalLicensePlatformEngine private constructor(private val context: Co
 
         // 1. Universal App-Scoped Pattern: ACTV-{APP}-{PLAN}-{HASH1}-{HASH2}-{HASH3}
         val planConfigs = listOf(
-            30 to "1 Month Standard",
-            90 to "3 Months Professional",
-            180 to "6 Months Enterprise",
+            30 to "Demo 1 Month",
+            90 to "3 Months Standard",
+            180 to "6 Months Professional",
             365 to "1 Year Enterprise",
-            0 to "Lifetime Commercial License"
+            0 to "Lifetime Commercial"
         )
 
         for ((days, name) in planConfigs) {
@@ -799,15 +801,30 @@ class UniversalLicensePlatformEngine private constructor(private val context: Co
         val newCode = generateApplicationCryptographicCode(target.appId, cleanNewInst, durationForNew, app?.secretSalt ?: "SALT")
         val newToken = SecurityUtils.generateDeterministicToken("${target.appId}:$cleanNewInst", app?.secretSalt ?: "SALT")
 
-        val updatedLicense = target.copy(
-            installationId = cleanNewInst,
-            licenseCode = newCode,
-            signatureToken = newToken,
-            status = "ACTIVE",
+        val oldTransferredLicense = target.copy(
+            status = "TRANSFERRED",
             lastModifiedAt = System.currentTimeMillis()
         )
 
-        val list = _licensesFlow.value.map { if (it.licenseId == licenseId) updatedLicense else it }
+        val newLicense = UniversalLicense(
+            licenseId = "LIC-TRF-${target.appId.take(4)}-${System.currentTimeMillis() % 100000}",
+            appId = target.appId,
+            customerId = target.customerId,
+            installationId = cleanNewInst,
+            licenseCode = newCode,
+            planType = target.planType,
+            planName = target.planName,
+            durationDays = durationForNew,
+            startDate = System.currentTimeMillis(),
+            expiryDate = target.expiryDate,
+            signatureToken = newToken,
+            status = "ACTIVE",
+            createdBy = performedBy,
+            createdAt = System.currentTimeMillis(),
+            lastModifiedAt = System.currentTimeMillis()
+        )
+
+        val list = _licensesFlow.value.map { if (it.licenseId == licenseId) oldTransferredLicense else it } + newLicense
         _licensesFlow.value = list
         saveLicenses(list)
 
@@ -819,12 +836,12 @@ class UniversalLicensePlatformEngine private constructor(private val context: Co
             appId = target.appId,
             customerId = target.customerId,
             installationId = cleanNewInst,
-            licenseId = licenseId,
+            licenseId = newLicense.licenseId,
             performedBy = performedBy,
             details = "Transferred from Old Terminal $oldInstallation to New Terminal $cleanNewInst. New Code: $newCode"
         )
 
-        return updatedLicense
+        return newLicense
     }
 
     // ==========================================

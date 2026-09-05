@@ -62,6 +62,7 @@ fun DashboardScreen(
     val connectionState by viewModel.connectionState.collectAsState()
     val activationState by viewModel.activationState.collectAsState()
     val salesTrend by viewModel.salesTrend.collectAsState()
+    val topProducts by viewModel.topProducts.collectAsState()
     val topCategories by viewModel.topCategories.collectAsState()
     val activeUser by viewModel.activeUser.collectAsState()
     val allUsers by viewModel.users.collectAsState()
@@ -458,16 +459,22 @@ fun DashboardScreen(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // 3. BUSINESS ANALYTICS (Daily Sales Trend & Category Analytics Chart)
+                val isLicenseVerified = activationState == AppActivationManager.STATUS_ACTIVATED || activationState == AppActivationManager.STATUS_OFFLINE_ACTIVATED
+
+                // 3. BUSINESS ANALYTICS (Daily Sales Trends & Top-Performing Products)
                 SectionHeader(
                     title = "Business Analytics",
-                    subtitle = "Sales trends & category performance"
+                    subtitle = if (isLicenseVerified) "Daily sales trends & top-performing products" else "Verification required to populate analytics"
                 )
 
                 AnalyticsChartsWidget(
                     salesTrend = salesTrend,
+                    topProducts = topProducts,
                     topCategories = topCategories,
-                    currencySymbol = currency
+                    currencySymbol = currency,
+                    isLicenseVerified = isLicenseVerified,
+                    onNavigateToActivation = { onNavigate("activation") },
+                    installationId = viewModel.identityManager.getInstallationId()
                 )
 
                 Spacer(modifier = Modifier.height(20.dp))
