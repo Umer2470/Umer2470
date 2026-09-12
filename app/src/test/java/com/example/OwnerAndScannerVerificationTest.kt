@@ -37,12 +37,12 @@ class OwnerAndScannerVerificationTest {
     @Test
     fun testOwnerPinAuthenticationAndInvalidPinRejection() {
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-        prefs.edit().putString("owner_security_code", "9999").apply()
+        prefs.edit().putString("owner_security_code", "8765").apply()
 
-        val savedPin = prefs.getString("owner_security_code", "9999") ?: "9999"
+        val savedPin = prefs.getString("owner_security_code", null) ?: ""
 
         // Valid PIN matches
-        assertTrue("PIN 9999 should be accepted", "9999" == savedPin)
+        assertTrue("Custom PIN 8765 should be accepted", "8765" == savedPin)
 
         // Invalid PIN rejected
         assertFalse("PIN 0000 should be rejected", "0000" == savedPin)

@@ -49,6 +49,7 @@ fun InvoiceScreen(
     val sales by viewModel.sales.collectAsState()
     val customersList by viewModel.customers.collectAsState()
     val storeSettings by viewModel.storeSettings.collectAsState()
+    val activePaymentQr by viewModel.activePaymentQr.collectAsState()
     val currency = storeSettings?.currencySymbol ?: "Rs"
 
     val lastPrinterConfig = remember(storeSettings) {
@@ -70,6 +71,7 @@ fun InvoiceScreen(
             sale = sale,
             items = items,
             settings = storeSettings,
+            activePaymentQr = activePaymentQr,
             onDismiss = { selectedSaleForReceipt = null },
             onEditRequest = { s ->
                 selectedSaleForReceipt = null
@@ -457,7 +459,8 @@ fun InvoiceScreen(
                                                                 context = context,
                                                                 sale = s,
                                                                 items = items,
-                                                                settings = storeSettings
+                                                                settings = storeSettings,
+                                                                activePaymentQr = activePaymentQr
                                                             )
                                                             Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
                                                         } else {

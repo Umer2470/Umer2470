@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -24,12 +25,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.example.data.entity.PaymentQrConfig
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
 import com.example.data.entity.StoreSettings
 import com.example.ui.theme.*
 import com.example.util.EscPosThermalPrinterService
 import com.example.util.InvoiceFormattingService
+import com.example.util.PaymentQrImageHelper
 import com.example.util.PdfGenerator
 import com.example.util.PrintableInvoice
 import com.example.util.QrCodeRenderer
@@ -46,14 +49,15 @@ fun InvoiceReceiptDialog(
     sale: Sale,
     items: List<SaleItem>,
     settings: StoreSettings?,
+    activePaymentQr: PaymentQrConfig? = null,
     onDismiss: () -> Unit,
     onEditRequest: ((Sale) -> Unit)? = null,
     onDeleteRequest: ((Sale) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val effectiveSettings = settings ?: StoreSettings()
-    val printableInvoice = remember(sale, items, settings) {
-        InvoiceFormattingService.formatSaleTransaction(sale, items, effectiveSettings)
+    val printableInvoice = remember(sale, items, settings, activePaymentQr) {
+        InvoiceFormattingService.formatSaleTransaction(sale, items, effectiveSettings, activePaymentQr)
     }
 
     var selectedFormat by remember { mutableStateOf(InvoiceViewFormat.THERMAL_RECEIPT) }
@@ -149,7 +153,8 @@ fun InvoiceReceiptDialog(
                                         context = context,
                                         sale = sale,
                                         items = items,
-                                        settings = effectiveSettings
+                                        settings = effectiveSettings,
+                                        activePaymentQr = activePaymentQr
                                     )
                                     Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
                                 }
@@ -408,6 +413,58 @@ fun InvoiceReceiptDialog(
                                     )
                                 }
 
+                                // Scan to Pay QR Block (Customer Payment)
+                                val scanToPay = printableInvoice.scanToPay
+                                if (scanToPay != null && scanToPay.isEnabled && !scanToPay.imagePath.isNullOrBlank()) {
+                                    val paymentQrBitmap = remember(scanToPay.imagePath) {
+                                        PaymentQrImageHelper.getQrBitmap(scanToPay.imagePath)
+                                    }
+                                    if (paymentQrBitmap != null) {
+                                        HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp))
+                                        Text(
+                                            text = scanToPay.headerLabel.ifBlank { "SCAN TO PAY" },
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 13.sp,
+                                            color = Navy900,
+                                            letterSpacing = 1.sp
+                                        )
+                                        Spacer(modifier = Modifier.height(6.dp))
+                                        Image(
+                                            bitmap = paymentQrBitmap.asImageBitmap(),
+                                            contentDescription = "Scan to Pay Payment QR Code",
+                                            filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+                                            modifier = Modifier
+                                                .size(130.dp)
+                                                .border(1.dp, Slate200, RoundedCornerShape(6.dp))
+                                                .padding(6.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        val payText = "${scanToPay.paymentType} ${scanToPay.accountNumber}".trim()
+                                        Text(
+                                            text = payText,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = Navy900
+                                        )
+                                        if (scanToPay.accountTitle.isNotBlank()) {
+                                            Text(
+                                                text = "A/C Title: ${scanToPay.accountTitle}",
+                                                fontSize = 11.sp,
+                                                color = Navy700
+                                            )
+                                        }
+                                        if (scanToPay.instructions.isNotBlank()) {
+                                            Text(
+                                                text = scanToPay.instructions,
+                                                fontSize = 10.sp,
+                                                color = Navy600,
+                                                textAlign = TextAlign.Center,
+                                                modifier = Modifier.padding(horizontal = 12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
                                 if (printableInvoice.footerText.isNotBlank()) {
                                     Spacer(modifier = Modifier.height(6.dp))
                                     Text(
@@ -556,6 +613,69 @@ fun InvoiceReceiptDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
+                                        // Scan to Pay Card for A4 Invoice
+                                        val a4ScanToPay = printableInvoice.scanToPay
+                                        if (a4ScanToPay != null && a4ScanToPay.isEnabled && !a4ScanToPay.imagePath.isNullOrBlank()) {
+                                            val paymentQrBitmap = remember(a4ScanToPay.imagePath) {
+                                                PaymentQrImageHelper.getQrBitmap(a4ScanToPay.imagePath)
+                                            }
+                                            if (paymentQrBitmap != null) {
+                                                Surface(
+                                                    color = Slate50,
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, Slate200),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth(0.9f)
+                                                        .padding(bottom = 12.dp)
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                    ) {
+                                                        Image(
+                                                            bitmap = paymentQrBitmap.asImageBitmap(),
+                                                            contentDescription = "Scan to Pay QR Code",
+                                                            filterQuality = androidx.compose.ui.graphics.FilterQuality.High,
+                                                            modifier = Modifier
+                                                                .size(72.dp)
+                                                                .border(1.dp, Slate300, RoundedCornerShape(4.dp))
+                                                                .padding(2.dp)
+                                                        )
+                                                        Column {
+                                                            Text(
+                                                                text = a4ScanToPay.headerLabel.ifBlank { "SCAN TO PAY" },
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 11.sp,
+                                                                color = Navy900
+                                                            )
+                                                            val payDetails = "${a4ScanToPay.paymentType} ${a4ScanToPay.accountNumber}".trim()
+                                                            Text(
+                                                                text = payDetails,
+                                                                fontWeight = FontWeight.SemiBold,
+                                                                fontSize = 10.sp,
+                                                                color = Navy800
+                                                            )
+                                                            if (a4ScanToPay.accountTitle.isNotBlank()) {
+                                                                Text(
+                                                                    text = "A/C: ${a4ScanToPay.accountTitle}",
+                                                                    fontSize = 9.sp,
+                                                                    color = Navy700
+                                                                )
+                                                            }
+                                                            if (a4ScanToPay.instructions.isNotBlank()) {
+                                                                Text(
+                                                                    text = a4ScanToPay.instructions,
+                                                                    fontSize = 8.sp,
+                                                                    color = Navy600
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
                                         Text("Terms & Declarations:", fontWeight = FontWeight.Bold, fontSize = 11.sp, color = Navy700)
                                         Text(
                                             text = printableInvoice.footerText,
@@ -629,7 +749,8 @@ fun InvoiceReceiptDialog(
                                                 context = context,
                                                 sale = sale,
                                                 items = items,
-                                                settings = effectiveSettings
+                                                settings = effectiveSettings,
+                                                activePaymentQr = activePaymentQr
                                             )
                                             Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
                                         } catch (e: Exception) {

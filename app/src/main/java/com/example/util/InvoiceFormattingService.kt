@@ -1,11 +1,22 @@
 package com.example.util
 
+import com.example.data.entity.PaymentQrConfig
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
 import com.example.data.entity.StoreSettings
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+data class ScanToPayInfo(
+    val isEnabled: Boolean = false,
+    val headerLabel: String = "SCAN TO PAY",
+    val paymentType: String = "Easypaisa",
+    val accountTitle: String = "",
+    val accountNumber: String = "",
+    val instructions: String = "",
+    val imagePath: String? = null
+)
 
 data class PrintableInvoice(
     val header: InvoiceHeader,
@@ -14,7 +25,8 @@ data class PrintableInvoice(
     val items: List<InvoiceItem>,
     val totals: InvoiceTotals,
     val footerText: String,
-    val qrPayload: String
+    val qrPayload: String,
+    val scanToPay: ScanToPayInfo? = null
 )
 
 data class InvoiceHeader(
@@ -68,7 +80,8 @@ object InvoiceFormattingService {
     fun formatSaleTransaction(
         sale: Sale,
         items: List<SaleItem>,
-        settings: StoreSettings
+        settings: StoreSettings,
+        activePaymentQr: PaymentQrConfig? = null
     ): PrintableInvoice {
         val dateFormat = SimpleDateFormat("dd-MMM-yyyy hh:mm a", Locale.getDefault())
         val formattedDate = dateFormat.format(Date(sale.createdAt))
@@ -110,6 +123,18 @@ object InvoiceFormattingService {
             appendLine("Verification ID: VER-${sale.invoiceNumber}")
         }
 
+        val scanToPay = if (settings.isScanToPayEnabled && activePaymentQr != null && activePaymentQr.isEnabled && activePaymentQr.imagePath.isNotBlank()) {
+            ScanToPayInfo(
+                isEnabled = true,
+                headerLabel = settings.scanToPayLabel.ifBlank { "SCAN TO PAY" },
+                paymentType = activePaymentQr.paymentType.ifBlank { activePaymentQr.name },
+                accountTitle = activePaymentQr.accountTitle,
+                accountNumber = activePaymentQr.accountNumber,
+                instructions = activePaymentQr.instructions,
+                imagePath = activePaymentQr.imagePath
+            )
+        } else null
+
         return PrintableInvoice(
             header = InvoiceHeader(
                 storeName = settings.storeName.ifBlank { "SENTRY STORE" },
@@ -145,7 +170,8 @@ object InvoiceFormattingService {
                 currencySymbol = settings.currencySymbol
             ),
             footerText = settings.invoiceFooterText,
-            qrPayload = qrPayload
+            qrPayload = qrPayload,
+            scanToPay = scanToPay
         )
     }
 
@@ -203,6 +229,23 @@ object InvoiceFormattingService {
                 appendLine(row("Due Amount:", "${invoice.totals.currencySymbol} %.2f".format(invoice.totals.dueAmount)))
             }
             appendLine(doubleDivider)
+            val scanToPay = invoice.scanToPay
+            if (scanToPay != null && scanToPay.isEnabled) {
+                appendLine(center(scanToPay.headerLabel.ifBlank { "SCAN TO PAY" }))
+                appendLine(center("[ PAYMENT QR CODE ]"))
+                val methodLine = buildString {
+                    append(scanToPay.paymentType)
+                    if (scanToPay.accountNumber.isNotBlank()) append(": ${scanToPay.accountNumber}")
+                }
+                appendLine(center(methodLine))
+                if (scanToPay.accountTitle.isNotBlank()) {
+                    appendLine(center("A/C: ${scanToPay.accountTitle}"))
+                }
+                if (scanToPay.instructions.isNotBlank()) {
+                    appendLine(center(scanToPay.instructions))
+                }
+                appendLine(divider)
+            }
             if (invoice.footerText.isNotBlank()) {
                 appendLine(center(invoice.footerText))
             }

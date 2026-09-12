@@ -28,7 +28,10 @@ data class StoreSettings(
     val activeBranchId: Long = 1,
     val enableCloudBackup: Boolean = true,
     val enableSoundEffects: Boolean = true,
-    val paperWidthMm: Int = 80 // 58mm or 80mm
+    val paperWidthMm: Int = 80, // 58mm or 80mm
+    val isScanToPayEnabled: Boolean = false,
+    val scanToPayLabel: String = "SCAN TO PAY",
+    val activePaymentQrId: Long? = null
 )
 
 @JsonClass(generateAdapter = true)

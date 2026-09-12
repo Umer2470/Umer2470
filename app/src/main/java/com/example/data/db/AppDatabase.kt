@@ -27,9 +27,10 @@ import kotlinx.coroutines.launch
         StoreBranch::class,
         AttendanceRecord::class,
         BusinessProfile::class,
-        ActivityLog::class
+        ActivityLog::class,
+        PaymentQrConfig::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -44,6 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun attendanceDao(): AttendanceDao
     abstract fun businessProfileDao(): BusinessProfileDao
     abstract fun activityLogDao(): ActivityLogDao
+    abstract fun paymentQrConfigDao(): PaymentQrConfigDao
 
     companion object {
         @Volatile
@@ -59,6 +61,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `payment_qr_configs` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `name` TEXT NOT NULL,
+                        `paymentType` TEXT NOT NULL,
+                        `imagePath` TEXT NOT NULL,
+                        `accountTitle` TEXT NOT NULL,
+                        `accountNumber` TEXT NOT NULL,
+                        `instructions` TEXT NOT NULL,
+                        `isEnabled` INTEGER NOT NULL DEFAULT 1,
+                        `isDefault` INTEGER NOT NULL DEFAULT 0,
+                        `displayOrder` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN isScanToPayEnabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN scanToPayLabel TEXT NOT NULL DEFAULT 'SCAN TO PAY'")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN activePaymentQrId INTEGER DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -66,7 +91,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "sentry_store_pos_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .fallbackToDestructiveMigration(false)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {

@@ -38,6 +38,7 @@ import com.example.data.api.security.AppActivationManager
 import com.example.data.entity.StoreBranch
 import com.example.data.entity.User
 import com.example.ui.components.AppHeader
+import com.example.ui.components.PaymentQrSettingsSection
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
@@ -47,7 +48,8 @@ enum class OwnerTab {
     LICENSE,
     BRANCHES,
     STAFF,
-    SECURITY
+    SECURITY,
+    PAYMENT_QR
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -78,6 +80,14 @@ fun OwnerControlCenterScreen(
 
     // Toast Message
     var toastMessage by remember { mutableStateOf<String?>(null) }
+
+    // First-Time Setup State
+    val isOwnerConfigured = remember(isUnlocked, toastMessage) { viewModel.isOwnerSecurityConfigured() }
+    var setupOwnerPin by remember { mutableStateOf("") }
+    var setupOwnerConfirmPin by remember { mutableStateOf("") }
+    var setupOwnerError by remember { mutableStateOf<String?>(null) }
+    var isSetupPinVisible by remember { mutableStateOf(false) }
+    var switchToKeyLogin by remember { mutableStateOf(false) }
 
     // License Generator State
     val currentTerminalId = remember { viewModel.identityManager.getInstallationId() }
@@ -167,7 +177,7 @@ fun OwnerControlCenterScreen(
         ) {
             if (!isUnlocked) {
                 // ----------------------------------------------------
-                // OWNER SECURITY CODE / PIN AUTHENTICATION GATE
+                // OWNER SECURITY CODE / PIN AUTHENTICATION GATE OR FIRST-TIME SETUP
                 // ----------------------------------------------------
                 Column(
                     modifier = Modifier
@@ -176,127 +186,317 @@ fun OwnerControlCenterScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("owner_auth_card"),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                    ) {
-                        Column(
+                    if (!isOwnerConfigured && !switchToKeyLogin) {
+                        // FIRST-TIME OWNER SECURITY SETUP FLOW
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                                .testTag("owner_setup_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(Gold100),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.Security,
-                                    contentDescription = null,
-                                    tint = Gold600,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-
-                            Text(
-                                text = "Owner Security Authorization",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = Navy900,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Text(
-                                text = "Dedicated Owner / Developer Control Center access. Authenticate using your Dedicated Owner Security Password/PIN or Owner Security Key.",
-                                fontSize = 12.sp,
-                                color = Navy500,
-                                textAlign = TextAlign.Center
-                            )
-
-                            OutlinedTextField(
-                                value = enteredPin,
-                                onValueChange = {
-                                    enteredPin = it
-                                    pinError = null
-                                },
-                                label = { Text("Owner Password/PIN or Security Key") },
-                                placeholder = { Text("Enter Owner PIN or Owner Security Key") },
-                                visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                trailingIcon = {
-                                    IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
-                                        Icon(
-                                            if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                            contentDescription = if (isPasswordVisible) "Hide credential" else "Show credential"
-                                        )
-                                    }
-                                },
-                                singleLine = true,
-                                isError = pinError != null,
-                                supportingText = {
-                                    if (pinError != null) {
-                                        Text(pinError!!, color = Rose600)
-                                    } else {
-                                        Text("Dedicated Owner Credential Only (Cashier & Admin PINs are not accepted)", fontSize = 11.sp, color = Navy400)
-                                    }
-                                },
-                                shape = RoundedCornerShape(10.dp),
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .testTag("owner_pin_input")
-                            )
-
-                            Button(
-                                onClick = {
-                                    if (viewModel.verifyOwnerSecurityCode(enteredPin)) {
-                                        isUnlocked = true
-                                        enteredPin = ""
-                                        pinError = null
-                                    } else {
-                                        pinError = "Invalid Owner Security Credential. Access Denied."
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp)
-                                    .testTag("btn_unlock_owner_center")
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Unlock Owner Control Center", fontWeight = FontWeight.Bold)
-                            }
-
-                            Surface(
-                                color = Slate100,
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(Gold100),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        Icons.Default.Shield,
+                                        Icons.Default.AdminPanelSettings,
                                         contentDescription = null,
-                                        tint = Navy700,
-                                        modifier = Modifier.size(18.dp)
+                                        tint = Gold600,
+                                        modifier = Modifier.size(36.dp)
                                     )
+                                }
+
+                                Text(
+                                    text = "Owner Security Setup",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Navy900,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Text(
+                                    text = "No Owner Security PIN has been configured. As store proprietor or developer, establish your dedicated Owner PIN to secure this control center.",
+                                    fontSize = 12.sp,
+                                    color = Navy500,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                // Security Key display card
+                                val setupSecurityKey = remember { viewModel.getOwnerSecurityKey() }
+                                Surface(
+                                    color = Slate50,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = ButtonDefaults.outlinedButtonBorder,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Cryptographic Owner Key (Master Fallback):", fontSize = 10.sp, color = Gold700, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = setupSecurityKey,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = Navy900
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                clipboardManager.setPrimaryClip(ClipData.newPlainText("Owner Key", setupSecurityKey))
+                                                toastMessage = "Owner Security Key copied to clipboard!"
+                                            },
+                                            modifier = Modifier.testTag("btn_copy_setup_key")
+                                        ) {
+                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Navy800, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = setupOwnerPin,
+                                    onValueChange = {
+                                        setupOwnerPin = it
+                                        setupOwnerError = null
+                                    },
+                                    label = { Text("Create Dedicated Owner PIN (min 4 characters)") },
+                                    visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { isSetupPinVisible = !isSetupPinVisible }) {
+                                            Icon(
+                                                if (isSetupPinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    },
+                                    singleLine = true,
+                                    isError = setupOwnerError != null,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("setup_owner_pin_input")
+                                )
+
+                                OutlinedTextField(
+                                    value = setupOwnerConfirmPin,
+                                    onValueChange = {
+                                        setupOwnerConfirmPin = it
+                                        setupOwnerError = null
+                                    },
+                                    label = { Text("Confirm Dedicated Owner PIN") },
+                                    visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    isError = setupOwnerError != null,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("setup_owner_confirm_pin_input")
+                                )
+
+                                if (setupOwnerError != null) {
                                     Text(
-                                        text = "Biometric authentication is completely excluded. Access is permitted strictly via Dedicated Owner Password/PIN or Security Key.",
-                                        fontSize = 11.sp,
-                                        color = Navy700,
-                                        lineHeight = 15.sp
+                                        text = setupOwnerError!!,
+                                        color = Rose600,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center
                                     )
+                                } else {
+                                    Text(
+                                        text = "Completely isolated from Cashier & Admin PINs. Default backdoors (9999, 1234, 0000, phone numbers) are rejected.",
+                                        fontSize = 11.sp,
+                                        color = Navy400,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+
+                                Button(
+                                    onClick = {
+                                        val cleanPin = setupOwnerPin.trim()
+                                        if (cleanPin.length < 4) {
+                                            setupOwnerError = "PIN must be at least 4 characters/digits."
+                                        } else if (cleanPin != setupOwnerConfirmPin.trim()) {
+                                            setupOwnerError = "PINs do not match. Please confirm your PIN."
+                                        } else {
+                                            val success = viewModel.setupOwnerSecurity(cleanPin)
+                                            if (success) {
+                                                isUnlocked = true
+                                                setupOwnerPin = ""
+                                                setupOwnerConfirmPin = ""
+                                                setupOwnerError = null
+                                                toastMessage = "Dedicated Owner Security PIN configured successfully!"
+                                            } else {
+                                                setupOwnerError = "Cannot use prohibited or trivial PIN (e.g. 9999, 1234, 0000, or staff PINs)."
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("btn_setup_owner_security")
+                                ) {
+                                    Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Save Credential & Unlock", fontWeight = FontWeight.Bold)
+                                }
+
+                                TextButton(
+                                    onClick = { switchToKeyLogin = true },
+                                    modifier = Modifier.testTag("btn_switch_to_key_login")
+                                ) {
+                                    Text("Have an Owner Security Key? Enter Key Instead", fontSize = 12.sp, color = Navy700)
+                                }
+                            }
+                        }
+                    } else {
+                        // STANDARD OWNER SECURITY AUTHORIZATION GATE
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("owner_auth_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(Gold100),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.Security,
+                                        contentDescription = null,
+                                        tint = Gold600,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
+
+                                Text(
+                                    text = "Owner Security Authorization",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Navy900,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Text(
+                                    text = "Dedicated Owner / Developer Control Center access. Authenticate using your Dedicated Owner Security Password/PIN or Owner Security Key.",
+                                    fontSize = 12.sp,
+                                    color = Navy500,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                OutlinedTextField(
+                                    value = enteredPin,
+                                    onValueChange = {
+                                        enteredPin = it
+                                        pinError = null
+                                    },
+                                    label = { Text("Owner Password/PIN or Security Key") },
+                                    placeholder = { Text("Enter Owner PIN or Owner Security Key") },
+                                    visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
+                                            Icon(
+                                                if (isPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (isPasswordVisible) "Hide credential" else "Show credential"
+                                            )
+                                        }
+                                    },
+                                    singleLine = true,
+                                    isError = pinError != null,
+                                    supportingText = {
+                                        if (pinError != null) {
+                                            Text(pinError!!, color = Rose600)
+                                        } else {
+                                            Text("Dedicated Owner Credential Only (Cashier & Admin PINs are not accepted)", fontSize = 11.sp, color = Navy400)
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("owner_pin_input")
+                                )
+
+                                Button(
+                                    onClick = {
+                                        if (viewModel.verifyOwnerSecurityCode(enteredPin)) {
+                                            isUnlocked = true
+                                            enteredPin = ""
+                                            pinError = null
+                                        } else {
+                                            pinError = "Invalid Owner Security Credential. Access Denied."
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("btn_unlock_owner_center")
+                                ) {
+                                    Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Unlock Owner Control Center", fontWeight = FontWeight.Bold)
+                                }
+
+                                if (!isOwnerConfigured && switchToKeyLogin) {
+                                    TextButton(
+                                        onClick = { switchToKeyLogin = false }
+                                    ) {
+                                        Text("Back to First-Time Setup", fontSize = 12.sp, color = Navy700)
+                                    }
+                                }
+
+                                Surface(
+                                    color = Slate100,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Shield,
+                                            contentDescription = null,
+                                            tint = Navy700,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = "Biometric authentication is completely excluded. Access is permitted strictly via Dedicated Owner Password/PIN or Security Key.",
+                                            fontSize = 11.sp,
+                                            color = Navy700,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -342,6 +542,13 @@ fun OwnerControlCenterScreen(
                             text = { Text("Security", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                             icon = { Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(16.dp)) },
                             modifier = Modifier.testTag("tab_owner_security")
+                        )
+                        Tab(
+                            selected = currentTab == OwnerTab.PAYMENT_QR,
+                            onClick = { currentTab = OwnerTab.PAYMENT_QR },
+                            text = { Text("Payment QR", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                            icon = { Icon(Icons.Default.QrCode2, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            modifier = Modifier.testTag("tab_owner_payment_qr")
                         )
                     }
 
@@ -1008,6 +1215,14 @@ fun OwnerControlCenterScreen(
                                         }
                                     }
                                 }
+                            }
+
+                            OwnerTab.PAYMENT_QR -> {
+                                PaymentQrSettingsSection(
+                                    viewModel = viewModel,
+                                    storeSettings = storeSettings,
+                                    isPreUnlocked = true
+                                )
                             }
                         }
                     }

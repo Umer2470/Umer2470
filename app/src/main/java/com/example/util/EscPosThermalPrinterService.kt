@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.content.SharedPreferences
 import android.widget.Toast
+import com.example.data.entity.PaymentQrConfig
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
 import com.example.data.entity.StoreSettings
@@ -120,11 +121,12 @@ class EscPosThermalPrinterService(private val context: Context) {
             context: Context,
             sale: Sale,
             items: List<SaleItem>,
-            settings: StoreSettings?
+            settings: StoreSettings?,
+            activePaymentQr: PaymentQrConfig? = null
         ): QuickPrintResult = withContext(Dispatchers.IO) {
             val effectiveSettings = settings ?: StoreSettings()
             val paperWidth = effectiveSettings.paperWidthMm
-            val printableInvoice = InvoiceFormattingService.formatSaleTransaction(sale, items, effectiveSettings)
+            val printableInvoice = InvoiceFormattingService.formatSaleTransaction(sale, items, effectiveSettings, activePaymentQr)
             val savedConfig = getLastPrinterConfig(context, paperWidth)
 
             // 1. If Bluetooth MAC is configured, try direct ESC/POS hardware print
@@ -177,9 +179,10 @@ class EscPosThermalPrinterService(private val context: Context) {
             sale: Sale,
             items: List<SaleItem>,
             settings: StoreSettings,
-            paperWidthMm: Int = 80
+            paperWidthMm: Int = 80,
+            activePaymentQr: PaymentQrConfig? = null
         ): ByteArray {
-            val invoice = InvoiceFormattingService.formatSaleTransaction(sale, items, settings)
+            val invoice = InvoiceFormattingService.formatSaleTransaction(sale, items, settings, activePaymentQr)
             return generateEscPosCommandBytes(invoice, paperWidthMm)
         }
     }

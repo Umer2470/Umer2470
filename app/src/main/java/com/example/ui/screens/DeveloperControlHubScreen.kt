@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -70,6 +71,15 @@ fun DeveloperControlHubScreen(
     var isDeveloperAuthenticated by remember { mutableStateOf(false) }
     var enteredMasterKey by remember { mutableStateOf("") }
     var masterKeyError by remember { mutableStateOf<String?>(null) }
+    var isMasterKeyVisible by remember { mutableStateOf(false) }
+
+    // First-Time Setup State
+    val isOwnerConfigured = remember(isDeveloperAuthenticated) { viewModel.isOwnerSecurityConfigured() }
+    var setupDevPin by remember { mutableStateOf("") }
+    var setupDevConfirmPin by remember { mutableStateOf("") }
+    var setupDevError by remember { mutableStateOf<String?>(null) }
+    var isSetupPinVisible by remember { mutableStateOf(false) }
+    var switchToKeyLogin by remember { mutableStateOf(false) }
 
     // Active Tab
     var selectedTab by remember { mutableStateOf(DevPlatformTab.APPS) }
@@ -168,6 +178,8 @@ fun DeveloperControlHubScreen(
                 // ----------------------------------------------------
                 // DEVELOPER MASTER SECURITY AUTHENTICATION GATE
                 // ----------------------------------------------------
+                // DEVELOPER / OWNER SECURITY CODE AUTHENTICATION GATE OR FIRST-TIME SETUP
+                // ----------------------------------------------------
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -175,120 +187,318 @@ fun DeveloperControlHubScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("dev_master_auth_card"),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = Color.White),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                    ) {
-                        Column(
+                    if (!isOwnerConfigured && !switchToKeyLogin) {
+                        // FIRST-TIME OWNER / DEVELOPER SECURITY SETUP FLOW
+                        Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(24.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                                .testTag("dev_setup_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .clip(CircleShape)
-                                    .background(Navy900),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    Icons.Default.AdminPanelSettings,
-                                    contentDescription = null,
-                                    tint = Gold400,
-                                    modifier = Modifier.size(36.dp)
-                                )
-                            }
-
-                            Text(
-                                text = "Developer Security Authorization",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = Navy900,
-                                textAlign = TextAlign.Center
-                            )
-
-                            Text(
-                                text = "Enter Dedicated Owner Security Password/PIN or Owner Security Key to access Developer Control Hub.",
-                                fontSize = 12.sp,
-                                color = Navy500,
-                                textAlign = TextAlign.Center
-                            )
-
-                            OutlinedTextField(
-                                value = enteredMasterKey,
-                                onValueChange = {
-                                    enteredMasterKey = it
-                                    masterKeyError = null
-                                },
-                                label = { Text("Owner Password/PIN or Security Key") },
-                                placeholder = { Text("Enter Owner PIN or Owner Security Key") },
-                                visualTransformation = PasswordVisualTransformation(),
-                                singleLine = true,
-                                isError = masterKeyError != null,
-                                supportingText = {
-                                    if (masterKeyError != null) {
-                                        Text(masterKeyError!!, color = Rose600)
-                                    } else {
-                                        Text("Dedicated Owner Credential Only (Cashier & Staff PINs not accepted)", fontSize = 11.sp, color = Navy400)
-                                    }
-                                },
-                                shape = RoundedCornerShape(10.dp),
+                            Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .testTag("dev_master_key_input")
-                            )
-
-                            Button(
-                                onClick = {
-                                    val clean = enteredMasterKey.trim()
-                                    if (viewModel.verifyDeveloperAuth(clean)) {
-                                        isDeveloperAuthenticated = true
-                                        enteredMasterKey = ""
-                                        masterKeyError = null
-                                    } else {
-                                        masterKeyError = "Invalid Owner Security Credential. Access Denied."
-                                    }
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(48.dp)
-                                    .testTag("btn_unlock_dev_platform")
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
                             ) {
-                                Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("Verify & Access Developer Hub", fontWeight = FontWeight.Bold)
-                            }
-
-                            Surface(
-                                color = Slate100,
-                                shape = RoundedCornerShape(10.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(Navy900),
+                                    contentAlignment = Alignment.Center
                                 ) {
                                     Icon(
-                                        Icons.Default.Shield,
+                                        Icons.Default.AdminPanelSettings,
                                         contentDescription = null,
-                                        tint = Navy700,
-                                        modifier = Modifier.size(18.dp)
+                                        tint = Gold400,
+                                        modifier = Modifier.size(36.dp)
                                     )
+                                }
+
+                                Text(
+                                    text = "Owner & Developer Setup",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Navy900,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Text(
+                                    text = "No Owner Security PIN is configured yet. Set up your dedicated Owner Security PIN to unlock the Developer Control Hub and Owner Center.",
+                                    fontSize = 12.sp,
+                                    color = Navy500,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                // Cryptographic Security Key preview
+                                val devSecurityKey = remember { viewModel.getOwnerSecurityKey() }
+                                Surface(
+                                    color = Slate50,
+                                    shape = RoundedCornerShape(10.dp),
+                                    border = ButtonDefaults.outlinedButtonBorder,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text("Cryptographic Owner Key (Master Fallback):", fontSize = 10.sp, color = Gold700, fontWeight = FontWeight.Bold)
+                                            Text(
+                                                text = devSecurityKey,
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = Navy900
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                clipboardManager.setPrimaryClip(ClipData.newPlainText("Owner Key", devSecurityKey))
+                                                toastMessage = "Owner Security Key copied to clipboard!"
+                                            },
+                                            modifier = Modifier.testTag("btn_copy_dev_setup_key")
+                                        ) {
+                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Navy800, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
+                                }
+
+                                OutlinedTextField(
+                                    value = setupDevPin,
+                                    onValueChange = {
+                                        setupDevPin = it
+                                        setupDevError = null
+                                    },
+                                    label = { Text("Create Dedicated Owner PIN (min 4 characters)") },
+                                    visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { isSetupPinVisible = !isSetupPinVisible }) {
+                                            Icon(
+                                                if (isSetupPinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = null
+                                            )
+                                        }
+                                    },
+                                    singleLine = true,
+                                    isError = setupDevError != null,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("setup_dev_pin_input")
+                                )
+
+                                OutlinedTextField(
+                                    value = setupDevConfirmPin,
+                                    onValueChange = {
+                                        setupDevConfirmPin = it
+                                        setupDevError = null
+                                    },
+                                    label = { Text("Confirm Dedicated Owner PIN") },
+                                    visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    singleLine = true,
+                                    isError = setupDevError != null,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("setup_dev_confirm_pin_input")
+                                )
+
+                                if (setupDevError != null) {
                                     Text(
-                                        text = "Biometric authentication is completely excluded. Access is permitted strictly via Dedicated Owner Password/PIN or Security Key.",
-                                        fontSize = 11.sp,
-                                        color = Navy700,
-                                        lineHeight = 15.sp
+                                        text = setupDevError!!,
+                                        color = Rose600,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center
                                     )
+                                } else {
+                                    Text(
+                                        text = "Completely isolated from Cashier & Admin PINs. Default backdoors (9999, 1234, 0000, phone numbers) are rejected.",
+                                        fontSize = 11.sp,
+                                        color = Navy400,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+
+                                Button(
+                                    onClick = {
+                                        val cleanPin = setupDevPin.trim()
+                                        if (cleanPin.length < 4) {
+                                            setupDevError = "PIN must be at least 4 characters/digits."
+                                        } else if (cleanPin != setupDevConfirmPin.trim()) {
+                                            setupDevError = "PINs do not match. Please confirm your PIN."
+                                        } else {
+                                            val success = viewModel.setupOwnerSecurity(cleanPin)
+                                            if (success) {
+                                                isDeveloperAuthenticated = true
+                                                setupDevPin = ""
+                                                setupDevConfirmPin = ""
+                                                setupDevError = null
+                                                toastMessage = "Dedicated Owner Security PIN configured successfully!"
+                                            } else {
+                                                setupDevError = "Cannot use prohibited or trivial PIN (e.g. 9999, 1234, 0000, or staff PINs)."
+                                            }
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("btn_setup_dev_security")
+                                ) {
+                                    Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Save Credential & Access Hub", fontWeight = FontWeight.Bold)
+                                }
+
+                                TextButton(
+                                    onClick = { switchToKeyLogin = true },
+                                    modifier = Modifier.testTag("btn_dev_switch_to_key_login")
+                                ) {
+                                    Text("Have an Owner Security Key? Enter Key Instead", fontSize = 12.sp, color = Navy700)
+                                }
+                            }
+                        }
+                    } else {
+                        // STANDARD DEVELOPER / OWNER AUTHORIZATION GATE
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("dev_master_auth_card"),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(24.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(64.dp)
+                                        .clip(CircleShape)
+                                        .background(Navy900),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        Icons.Default.AdminPanelSettings,
+                                        contentDescription = null,
+                                        tint = Gold400,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
+
+                                Text(
+                                    text = "Developer Security Authorization",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp,
+                                    color = Navy900,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                Text(
+                                    text = "Enter Dedicated Owner Security Password/PIN or Owner Security Key to access Developer Control Hub.",
+                                    fontSize = 12.sp,
+                                    color = Navy500,
+                                    textAlign = TextAlign.Center
+                                )
+
+                                OutlinedTextField(
+                                    value = enteredMasterKey,
+                                    onValueChange = {
+                                        enteredMasterKey = it
+                                        masterKeyError = null
+                                    },
+                                    label = { Text("Owner Password/PIN or Security Key") },
+                                    placeholder = { Text("Enter Owner PIN or Owner Security Key") },
+                                    visualTransformation = if (isMasterKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                    trailingIcon = {
+                                        IconButton(onClick = { isMasterKeyVisible = !isMasterKeyVisible }) {
+                                            Icon(
+                                                if (isMasterKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                contentDescription = if (isMasterKeyVisible) "Hide credential" else "Show credential"
+                                            )
+                                        }
+                                    },
+                                    singleLine = true,
+                                    isError = masterKeyError != null,
+                                    supportingText = {
+                                        if (masterKeyError != null) {
+                                            Text(masterKeyError!!, color = Rose600)
+                                        } else {
+                                            Text("Dedicated Owner Credential Only (Cashier & Staff PINs not accepted)", fontSize = 11.sp, color = Navy400)
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("dev_master_key_input")
+                                )
+
+                                Button(
+                                    onClick = {
+                                        val clean = enteredMasterKey.trim()
+                                        if (viewModel.verifyDeveloperAuth(clean)) {
+                                            isDeveloperAuthenticated = true
+                                            enteredMasterKey = ""
+                                            masterKeyError = null
+                                        } else {
+                                            masterKeyError = "Invalid Owner Security Credential. Access Denied."
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(48.dp)
+                                        .testTag("btn_unlock_dev_platform")
+                                ) {
+                                    Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Verify & Access Developer Hub", fontWeight = FontWeight.Bold)
+                                }
+
+                                if (!isOwnerConfigured && switchToKeyLogin) {
+                                    TextButton(
+                                        onClick = { switchToKeyLogin = false }
+                                    ) {
+                                        Text("Back to First-Time Setup", fontSize = 12.sp, color = Navy700)
+                                    }
+                                }
+
+                                Surface(
+                                    color = Slate100,
+                                    shape = RoundedCornerShape(10.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Shield,
+                                            contentDescription = null,
+                                            tint = Navy700,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = "Biometric authentication is completely excluded. Access is permitted strictly via Dedicated Owner Password/PIN or Security Key.",
+                                            fontSize = 11.sp,
+                                            color = Navy700,
+                                            lineHeight = 15.sp
+                                        )
+                                    }
                                 }
                             }
                         }

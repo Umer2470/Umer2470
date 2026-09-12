@@ -69,6 +69,7 @@ fun SalesPosScreen(
     val activeCashierName by viewModel.activeCashierName.collectAsState()
     val users by viewModel.users.collectAsState()
     val storeSettings by viewModel.storeSettings.collectAsState()
+    val activePaymentQr by viewModel.activePaymentQr.collectAsState()
 
     val subtotal = remember(cart) { cart.sumOf { it.totalPrice } }
     val netAmount = remember(subtotal, discountAmount) { (subtotal - discountAmount).coerceAtLeast(0.0) }
@@ -171,6 +172,7 @@ fun SalesPosScreen(
             sale = lastSale!!,
             items = lastSaleItems,
             settings = storeSettings,
+            activePaymentQr = activePaymentQr,
             onDismiss = {
                 showReceiptDialog = false
                 lastSale = null

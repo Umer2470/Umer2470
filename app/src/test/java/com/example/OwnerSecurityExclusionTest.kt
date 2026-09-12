@@ -25,12 +25,42 @@ class OwnerSecurityExclusionTest {
     }
 
     @Test
-    fun testDedicatedOwnerPinAccepted() {
-        // Initial PIN is verified via salted hash in SharedPreferences (not hardcoded)
-        assertTrue(
-            "Initial dedicated Owner PIN (9999) must be accepted",
+    fun testHardcoded9999AndPhoneBypassesStrictlyRejected() {
+        // Old fixed backdoor 9999 must never unlock Owner / Developer Center
+        assertFalse(
+            "Hardcoded bypass 9999 must be strictly rejected",
             ownerSecurityManager.verifyCredential("9999")
         )
+        // Contact number / phone bypass must be strictly rejected
+        assertFalse(
+            "Contact number bypass must be strictly rejected",
+            ownerSecurityManager.verifyCredential("03080018035")
+        )
+    }
+
+    @Test
+    fun testFirstTimeOwnerSecuritySetupFlow() {
+        // Reset state for isolation
+        context.getSharedPreferences("sentry_store_owner_security", Context.MODE_PRIVATE)
+            .edit().remove("key_owner_pin_hash").putBoolean("key_is_configured", false).apply()
+
+        assertFalse("Owner Security must not be configured initially without setup", ownerSecurityManager.isOwnerSecurityConfigured())
+
+        // Trivial or unauthorized bypass codes must be rejected during setup
+        assertFalse("Cannot setup 9999 as owner PIN", ownerSecurityManager.setupOwnerSecurity("9999"))
+        assertFalse("Cannot setup 1234 as owner PIN", ownerSecurityManager.setupOwnerSecurity("1234"))
+        assertFalse("Cannot setup 0000 as owner PIN", ownerSecurityManager.setupOwnerSecurity("0000"))
+        assertFalse("Cannot setup phone number as owner PIN", ownerSecurityManager.setupOwnerSecurity("03080018035"))
+        assertFalse("Short PIN must be rejected", ownerSecurityManager.setupOwnerSecurity("12"))
+
+        // Legitimate dedicated PIN setup
+        val setupSuccess = ownerSecurityManager.setupOwnerSecurity("8765")
+        assertTrue("Setup of valid dedicated PIN must succeed", setupSuccess)
+        assertTrue("Owner Security must now be configured", ownerSecurityManager.isOwnerSecurityConfigured())
+
+        // Verification of established PIN
+        assertTrue("Configured Owner PIN 8765 must be accepted", ownerSecurityManager.verifyCredential("8765"))
+        assertFalse("9999 must still be rejected", ownerSecurityManager.verifyCredential("9999"))
     }
 
     @Test
@@ -48,6 +78,8 @@ class OwnerSecurityExclusionTest {
 
     @Test
     fun testCashierAndAdminAndActivationCodesRejected() {
+        ownerSecurityManager.setupOwnerSecurity("8765")
+
         // Cashier PINs
         assertFalse("Cashier PIN 1234 must be strictly rejected", ownerSecurityManager.verifyCredential("1234"))
         assertFalse("Cashier PIN 0000 must be strictly rejected", ownerSecurityManager.verifyCredential("0000"))
@@ -67,6 +99,9 @@ class OwnerSecurityExclusionTest {
 
     @Test
     fun testUpdateOwnerSecurityPassword() {
+        ownerSecurityManager.setupOwnerSecurity("8765")
+        assertTrue("Current password 8765 accepted", ownerSecurityManager.verifyCredential("8765"))
+
         // Update password
         val updateSuccess = ownerSecurityManager.setPassword("7890")
         assertTrue("Setting new password should succeed", updateSuccess)
@@ -75,11 +110,8 @@ class OwnerSecurityExclusionTest {
         assertTrue("New password 7890 should be accepted", ownerSecurityManager.verifyCredential("7890"))
 
         // Old password should be rejected
-        assertFalse("Old password 9999 should now be rejected", ownerSecurityManager.verifyCredential("9999"))
-
-        // Restore to 9999 for test consistency
-        ownerSecurityManager.setPassword("9999")
-        assertTrue(ownerSecurityManager.verifyCredential("9999"))
+        assertFalse("Old password 8765 should now be rejected", ownerSecurityManager.verifyCredential("8765"))
+        assertFalse("9999 should be rejected", ownerSecurityManager.verifyCredential("9999"))
     }
 
     @Test
@@ -111,9 +143,12 @@ class OwnerSecurityExclusionTest {
         val app = ApplicationProvider.getApplicationContext<android.app.Application>()
         val vm = StoreViewModel(app)
 
+        vm.setupOwnerSecurity("5678")
+
         // Verify Owner PIN through ViewModel
-        assertTrue("ViewModel verifyOwnerSecurityCode accepts PIN", vm.verifyOwnerSecurityCode("9999"))
-        assertTrue("ViewModel verifyOwnerSecurityCredential accepts PIN", vm.verifyOwnerSecurityCredential("9999"))
+        assertTrue("ViewModel verifyOwnerSecurityCode accepts configured PIN", vm.verifyOwnerSecurityCode("5678"))
+        assertTrue("ViewModel verifyOwnerSecurityCredential accepts configured PIN", vm.verifyOwnerSecurityCredential("5678"))
+        assertTrue("ViewModel verifyDeveloperAuth accepts configured PIN", vm.verifyDeveloperAuth("5678"))
 
         // Verify Owner Security Key through ViewModel
         val key = vm.getOwnerSecurityKey()
@@ -121,6 +156,8 @@ class OwnerSecurityExclusionTest {
         assertTrue("ViewModel verifyDeveloperAuth accepts Security Key", vm.verifyDeveloperAuth(key))
 
         // Strict rejection of other credentials
+        assertFalse("ViewModel rejects 9999 bypass", vm.verifyOwnerSecurityCode("9999"))
+        assertFalse("ViewModel rejects phone bypass", vm.verifyOwnerSecurityCode("03080018035"))
         assertFalse("ViewModel rejects Cashier PIN", vm.verifyOwnerSecurityCode("1234"))
         assertFalse("ViewModel rejects Admin username", vm.verifyOwnerSecurityCode("admin"))
         assertFalse("ViewModel rejects Activation Code", vm.verifyOwnerSecurityCode("ACTV-M3-TEST"))

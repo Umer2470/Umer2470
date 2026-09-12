@@ -21,16 +21,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.R
+import com.example.data.api.security.OwnerSecurityManager
+import com.example.data.entity.PaymentQrConfig
 import com.example.data.entity.StoreSettings
 import com.example.ui.components.AppHeader
+import com.example.ui.components.PaymentQrSettingsSection
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.components.StatusBadge
@@ -38,6 +43,7 @@ import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
 import com.example.util.BiometricPromptHelper
 import com.example.util.BrandingImageHelper
+import com.example.util.PaymentQrImageHelper
 
 @Composable
 fun SettingsScreen(
@@ -740,7 +746,13 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. Biometric Security & Hardware Peripherals
+            // 4. Payment Settings & Scan-to-Pay QR
+            PaymentQrSettingsSection(
+                viewModel = viewModel,
+                storeSettings = storeSettings
+            )
+
+            // 5. Biometric Security & Hardware Peripherals
             SectionHeader(title = "Biometric Security & Hardware Peripherals", subtitle = "Fingerprint unlock, Camera Barcode Scanner & Laser inputs")
 
             Card(

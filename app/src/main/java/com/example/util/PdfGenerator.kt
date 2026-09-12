@@ -276,6 +276,22 @@ object PdfGenerator {
             canvas.drawText("Scan to verify invoice", 40f, y + 22f, mutedPaint)
         }
 
+        // Draw Scan to Pay QR Block if configured and enabled
+        val scanToPay = invoice.scanToPay
+        if (scanToPay != null && scanToPay.isEnabled && !scanToPay.imagePath.isNullOrBlank()) {
+            val paymentQrBitmap = PaymentQrImageHelper.getQrBitmap(scanToPay.imagePath)
+            if (paymentQrBitmap != null) {
+                val payDest = RectF(160f, y - 80f, 250f, y + 10f)
+                canvas.drawBitmap(paymentQrBitmap, null, payDest, basePaint)
+                canvas.drawText(scanToPay.headerLabel.ifBlank { "SCAN TO PAY" }, 160f, y - 85f, headerPaint)
+                val payLabel = "${scanToPay.paymentType} ${scanToPay.accountNumber}".trim()
+                canvas.drawText(payLabel, 160f, y + 22f, mutedPaint)
+                if (scanToPay.accountTitle.isNotBlank()) {
+                    canvas.drawText("A/C: ${scanToPay.accountTitle}", 160f, y + 33f, mutedPaint)
+                }
+            }
+        }
+
         y = maxOf(y + 40f, 730f)
         canvas.drawLine(40f, y, 555f, y, linePaint)
         y += 16f
@@ -305,8 +321,9 @@ object PdfGenerator {
         invoice: PrintableInvoice
     ): File? {
         val width = 226 // ~80mm width in PDF points (72 DPI)
-        // Calculate dynamic height based on item count
-        val calculatedHeight = 420 + (invoice.items.size * 18)
+        // Calculate dynamic height based on item count and Scan to Pay block
+        val scanToPayExtraHeight = if (invoice.scanToPay?.isEnabled == true) 140 else 0
+        val calculatedHeight = 420 + (invoice.items.size * 18) + scanToPayExtraHeight
         val height = maxOf(500, calculatedHeight)
 
         val document = PdfDocument()
@@ -477,6 +494,35 @@ object PdfGenerator {
             y += 92f
             canvas.drawText("Scan to verify receipt", centerX, y, textCenter)
             y += 12f
+        }
+
+        // Scan to Pay QR Code
+        val thermalScanToPay = invoice.scanToPay
+        if (thermalScanToPay != null && thermalScanToPay.isEnabled && !thermalScanToPay.imagePath.isNullOrBlank()) {
+            val paymentQrBitmap = PaymentQrImageHelper.getQrBitmap(thermalScanToPay.imagePath)
+            if (paymentQrBitmap != null) {
+                y += 8f
+                canvas.drawLine(margin, y, rightMargin, y, linePaint)
+                y += 14f
+                canvas.drawText(thermalScanToPay.headerLabel.ifBlank { "SCAN TO PAY" }, centerX, y, boldCenter)
+                y += 8f
+                val payDest = RectF(centerX - 45f, y, centerX + 45f, y + 90f)
+                canvas.drawBitmap(paymentQrBitmap, null, payDest, textLeft)
+                y += 98f
+                val payLine = "${thermalScanToPay.paymentType} ${thermalScanToPay.accountNumber}".trim()
+                canvas.drawText(payLine, centerX, y, textCenter)
+                y += 12f
+                if (thermalScanToPay.accountTitle.isNotBlank()) {
+                    canvas.drawText("A/C: ${thermalScanToPay.accountTitle}", centerX, y, textCenter)
+                    y += 12f
+                }
+                if (thermalScanToPay.instructions.isNotBlank()) {
+                    canvas.drawText(thermalScanToPay.instructions, centerX, y, textCenter)
+                    y += 12f
+                }
+                canvas.drawLine(margin, y, rightMargin, y, linePaint)
+                y += 10f
+            }
         }
 
         if (invoice.footerText.isNotBlank()) {

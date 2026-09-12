@@ -246,3 +246,34 @@ interface ActivityLogDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLog(log: ActivityLog): Long
 }
+
+@Dao
+interface PaymentQrConfigDao {
+    @Query("SELECT * FROM payment_qr_configs ORDER BY displayOrder ASC, id ASC")
+    fun getAllPaymentQrsFlow(): Flow<List<PaymentQrConfig>>
+
+    @Query("SELECT * FROM payment_qr_configs ORDER BY displayOrder ASC, id ASC")
+    suspend fun getAllPaymentQrs(): List<PaymentQrConfig>
+
+    @Query("SELECT * FROM payment_qr_configs WHERE isEnabled = 1 ORDER BY isDefault DESC, displayOrder ASC, id ASC")
+    fun getActivePaymentQrsFlow(): Flow<List<PaymentQrConfig>>
+
+    @Query("SELECT * FROM payment_qr_configs WHERE id = :id LIMIT 1")
+    suspend fun getPaymentQrById(id: Long): PaymentQrConfig?
+
+    @Query("SELECT * FROM payment_qr_configs WHERE isDefault = 1 AND isEnabled = 1 LIMIT 1")
+    suspend fun getDefaultPaymentQr(): PaymentQrConfig?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertPaymentQr(config: PaymentQrConfig): Long
+
+    @Update
+    suspend fun updatePaymentQr(config: PaymentQrConfig)
+
+    @Query("DELETE FROM payment_qr_configs WHERE id = :id")
+    suspend fun deletePaymentQr(id: Long)
+
+    @Query("UPDATE payment_qr_configs SET isDefault = CASE WHEN id = :defaultId THEN 1 ELSE 0 END")
+    suspend fun setDefaultPaymentQr(defaultId: Long)
+}
+

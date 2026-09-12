@@ -21,6 +21,7 @@ import java.util.UUID
  * - License / Activation Code
  *
  * Biometric authentication (Fingerprint, Face Unlock) is completely excluded and removed.
+ * No hardcoded backdoors or default bypass codes (such as 9999 or phone numbers) exist.
  */
 class OwnerSecurityManager private constructor(context: Context) {
 
@@ -31,7 +32,7 @@ class OwnerSecurityManager private constructor(context: Context) {
     }
 
     private fun ensureInitialized(context: Context) {
-        // 1. Ensure Salt is present
+        // 1. Ensure cryptographic salt exists
         if (!prefs.contains(KEY_SALT)) {
             val generatedSalt = UUID.randomUUID().toString().replace("-", "")
             prefs.edit().putString(KEY_SALT, generatedSalt).apply()
@@ -50,21 +51,38 @@ class OwnerSecurityManager private constructor(context: Context) {
                 .apply()
         }
 
-        // 3. Ensure Dedicated Owner Security Password/PIN is initialized
+        // 3. Purge unauthorized 9999 bypass if present in stored hash
+        val hashOf9999 = hashWithSalt("9999", salt)
+        val currentPinHash = prefs.getString(KEY_OWNER_PIN_HASH, null)
+        if (currentPinHash != null && currentPinHash.equals(hashOf9999, ignoreCase = true)) {
+            prefs.edit()
+                .remove(KEY_OWNER_PIN_HASH)
+                .putBoolean(KEY_IS_CONFIGURED, false)
+                .apply()
+        }
+
+        // 4. Migrate any custom legacy PIN if set by the proprietor (excluding unauthorized backdoors)
         if (!prefs.contains(KEY_OWNER_PIN_HASH)) {
-            // Check legacy preference first to preserve any user-configured PIN
             val legacyPrefs = context.getSharedPreferences("sentry_store_pos_preferences", Context.MODE_PRIVATE)
             val legacyPin = legacyPrefs.getString("owner_security_code", null)
                 ?: context.getSharedPreferences("pos_app_preferences", Context.MODE_PRIVATE).getString("owner_security_code", null)
 
-            val initialPin = if (!legacyPin.isNullOrBlank()) {
-                legacyPin.trim()
+            val cleanLegacy = legacyPin?.trim()
+            if (!cleanLegacy.isNullOrBlank() && cleanLegacy.length >= 4 && !isDisallowedCredential(cleanLegacy)) {
+                val pinHash = hashWithSalt(cleanLegacy, salt)
+                prefs.edit()
+                    .putString(KEY_OWNER_PIN_HASH, pinHash)
+                    .putBoolean(KEY_IS_CONFIGURED, true)
+                    .apply()
             } else {
-                // Initialize default 4-digit Owner PIN into SharedPreferences (not hardcoded in verification)
-                "9999"
+                // DO NOT seed a hidden backdoor or default PIN.
+                // Mark unconfigured so the proprietor goes through first-time setup flow.
+                prefs.edit().putBoolean(KEY_IS_CONFIGURED, false).apply()
             }
-            val pinHash = hashWithSalt(initialPin, salt)
-            prefs.edit().putString(KEY_OWNER_PIN_HASH, pinHash).apply()
+        } else {
+            if (!prefs.contains(KEY_IS_CONFIGURED)) {
+                prefs.edit().putBoolean(KEY_IS_CONFIGURED, true).apply()
+            }
         }
     }
 
@@ -73,17 +91,68 @@ class OwnerSecurityManager private constructor(context: Context) {
     }
 
     /**
+     * Checks if the Owner has completed the initial security setup.
+     */
+    fun isOwnerSecurityConfigured(): Boolean {
+        val isConfigured = prefs.getBoolean(KEY_IS_CONFIGURED, false)
+        val storedHash = prefs.getString(KEY_OWNER_PIN_HASH, null)
+        val salt = prefs.getString(KEY_SALT, "") ?: ""
+        val hashOf9999 = hashWithSalt("9999", salt)
+        return isConfigured && !storedHash.isNullOrBlank() && !storedHash.equals(hashOf9999, ignoreCase = true)
+    }
+
+    /**
+     * Initializes Owner Security for the first time.
+     */
+    fun setupOwnerSecurity(newPin: String): Boolean {
+        val clean = newPin.trim()
+        if (clean.length < 4) return false
+        if (isDisallowedCredential(clean)) return false
+
+        val salt = prefs.getString(KEY_SALT, "") ?: ""
+        val newHash = hashWithSalt(clean, salt)
+        prefs.edit()
+            .putString(KEY_OWNER_PIN_HASH, newHash)
+            .putBoolean(KEY_IS_CONFIGURED, true)
+            .apply()
+        return true
+    }
+
+    /**
+     * Common unauthorized backdoors and default codes that must never be allowed as Owner credentials.
+     */
+    fun isDisallowedCredential(credential: String): Boolean {
+        val clean = credential.trim().lowercase()
+        return clean in listOf(
+            "9999",
+            "1234",
+            "0000",
+            "1111",
+            "2026",
+            "8888",
+            "5555",
+            "03080018035",
+            "admin",
+            "superadmin",
+            "supervisor",
+            "cashier",
+            "password"
+        )
+    }
+
+    /**
      * Verifies whether the provided credential matches:
-     * 1. Dedicated Owner Security Password / PIN
+     * 1. Configured Dedicated Owner Security Password / PIN
      * OR
      * 2. Dedicated Owner Security Key
      *
-     * Returns true ONLY for matching dedicated owner credentials.
-     * Cashier PINs, Admin passwords, Supervisor PINs, and Activation codes are strictly rejected.
+     * Returns true ONLY for verified dedicated owner credentials.
+     * Common backdoors (9999, phone numbers, cashier/admin PINs) are strictly rejected.
      */
     fun verifyCredential(input: String): Boolean {
         val clean = input.trim()
         if (clean.isBlank()) return false
+        if (clean == "9999" || clean == "03080018035") return false // Explicitly reject unauthorized backdoors
 
         val salt = prefs.getString(KEY_SALT, "") ?: ""
         val inputHash = hashWithSalt(clean, salt)
@@ -91,10 +160,13 @@ class OwnerSecurityManager private constructor(context: Context) {
         val storedPinHash = prefs.getString(KEY_OWNER_PIN_HASH, null)
         val storedKeyHash = prefs.getString(KEY_OWNER_SECURITY_KEY_HASH, null)
         val storedRawKey = prefs.getString(KEY_OWNER_SECURITY_KEY, null)
+        val hashOf9999 = hashWithSalt("9999", salt)
 
-        // 1. Match Dedicated Owner PIN / Password
-        if (storedPinHash != null && inputHash.equals(storedPinHash, ignoreCase = true)) {
-            return true
+        // 1. Match Dedicated Owner PIN / Password (only if configured and not 9999)
+        if (isOwnerSecurityConfigured() && storedPinHash != null && !storedPinHash.equals(hashOf9999, ignoreCase = true)) {
+            if (inputHash.equals(storedPinHash, ignoreCase = true)) {
+                return true
+            }
         }
 
         // 2. Match Dedicated Owner Security Key (Hash or exact raw key)
@@ -117,19 +189,25 @@ class OwnerSecurityManager private constructor(context: Context) {
 
     /**
      * Updates the Dedicated Owner Security Password / PIN.
+     * Revokes the old credential immediately.
      */
     fun setPassword(newPassword: String): Boolean {
         val clean = newPassword.trim()
         if (clean.length < 4) return false
+        if (isDisallowedCredential(clean)) return false
 
         val salt = prefs.getString(KEY_SALT, "") ?: ""
         val newHash = hashWithSalt(clean, salt)
-        prefs.edit().putString(KEY_OWNER_PIN_HASH, newHash).apply()
+        prefs.edit()
+            .putString(KEY_OWNER_PIN_HASH, newHash)
+            .putBoolean(KEY_IS_CONFIGURED, true)
+            .apply()
         return true
     }
 
     /**
      * Regenerates a new unique Dedicated Owner Security Key.
+     * The old key is invalidated immediately.
      */
     fun regenerateSecurityKey(): String {
         val salt = prefs.getString(KEY_SALT, "") ?: ""
@@ -154,6 +232,7 @@ class OwnerSecurityManager private constructor(context: Context) {
         private const val KEY_OWNER_PIN_HASH = "key_owner_pin_hash"
         private const val KEY_OWNER_SECURITY_KEY = "key_owner_security_key"
         private const val KEY_OWNER_SECURITY_KEY_HASH = "key_owner_security_key_hash"
+        private const val KEY_IS_CONFIGURED = "key_is_configured"
 
         @Volatile
         private var INSTANCE: OwnerSecurityManager? = null
@@ -165,3 +244,4 @@ class OwnerSecurityManager private constructor(context: Context) {
         }
     }
 }
+

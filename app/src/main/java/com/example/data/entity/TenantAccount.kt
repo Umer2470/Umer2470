@@ -31,7 +31,7 @@ data class TenantAccount(
     }
 
     fun getDaysRemaining(): Long {
-        if (isMasterOwnerAccount) return 9999L
+        if (isMasterOwnerAccount) return 36500L // 100 years / perpetual
         val diff = licenseExpiryDate - System.currentTimeMillis()
         return if (diff > 0) diff / (24 * 60 * 60 * 1000) else 0L
     }

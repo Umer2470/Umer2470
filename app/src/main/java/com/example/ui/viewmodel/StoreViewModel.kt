@@ -14,6 +14,7 @@ import com.example.data.api.security.SecureIdentityManager
 import com.example.data.db.AppDatabase
 import com.example.data.entity.*
 import com.example.data.model.UserRole
+import com.example.util.PaymentQrImageHelper
 import com.example.util.RecoveryUtils
 import com.example.util.SecurityUtils
 import kotlinx.coroutines.Dispatchers
@@ -81,6 +82,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val attendanceDao = db.attendanceDao()
     private val businessProfileDao = db.businessProfileDao()
     private val activityLogDao = db.activityLogDao()
+    private val paymentQrConfigDao = db.paymentQrConfigDao()
 
     val activationManager = AppActivationManager.getInstance(application)
     val identityManager = SecureIdentityManager.getInstance(application)
@@ -124,6 +126,24 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     val activityLogs: StateFlow<List<ActivityLog>> = activityLogDao.getRecentLogsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val paymentQrConfigs: StateFlow<List<PaymentQrConfig>> = paymentQrConfigDao.getAllPaymentQrsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val activePaymentQr: StateFlow<PaymentQrConfig?> = combine(
+        paymentQrConfigs,
+        storeSettings
+    ) { qrs, settings ->
+        val activeId = settings?.activePaymentQrId
+        if (activeId != null) {
+            qrs.firstOrNull { it.id == activeId && it.isEnabled }
+                ?: qrs.firstOrNull { it.isDefault && it.isEnabled }
+                ?: qrs.firstOrNull { it.isEnabled }
+        } else {
+            qrs.firstOrNull { it.isDefault && it.isEnabled }
+                ?: qrs.firstOrNull { it.isEnabled }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val recycleBinProducts: StateFlow<List<Product>> = productDao.getRecycleBinProductsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -851,6 +871,108 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Payment QR / Scan to Pay Management
+    fun saveOrUpdatePaymentQr(
+        qr: PaymentQrConfig,
+        setAsActive: Boolean = false,
+        onComplete: ((Long) -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val id = if (qr.id == 0L) {
+                paymentQrConfigDao.insertPaymentQr(qr)
+            } else {
+                paymentQrConfigDao.updatePaymentQr(qr)
+                qr.id
+            }
+            if (setAsActive || qr.isDefault) {
+                paymentQrConfigDao.setDefaultPaymentQr(id)
+                val current = storeSettingsDao.getSettings() ?: StoreSettings()
+                storeSettingsDao.insertOrUpdateSettings(current.copy(activePaymentQrId = id))
+            }
+            withContext(Dispatchers.Main) {
+                onComplete?.invoke(id)
+            }
+        }
+    }
+
+    fun deletePaymentQr(
+        context: Context,
+        qr: PaymentQrConfig,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            PaymentQrImageHelper.deleteApplicationQrImage(context, qr.imagePath)
+            paymentQrConfigDao.deletePaymentQr(qr.id)
+            val current = storeSettingsDao.getSettings()
+            if (current != null && current.activePaymentQrId == qr.id) {
+                val remaining = paymentQrConfigDao.getAllPaymentQrs()
+                val nextActive = remaining.firstOrNull { it.isEnabled }?.id
+                storeSettingsDao.insertOrUpdateSettings(
+                    current.copy(
+                        activePaymentQrId = nextActive,
+                        isScanToPayEnabled = if (nextActive == null) false else current.isScanToPayEnabled
+                    )
+                )
+            }
+            withContext(Dispatchers.Main) {
+                onComplete?.invoke()
+            }
+        }
+    }
+
+    fun setScanToPayEnabled(
+        enabled: Boolean,
+        onComplete: ((Boolean) -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = storeSettingsDao.getSettings() ?: StoreSettings()
+            val allQrs = paymentQrConfigDao.getAllPaymentQrs()
+            val hasValidQr = allQrs.any { it.isEnabled && it.imagePath.isNotBlank() && PaymentQrImageHelper.isImageValid(it.imagePath) }
+
+            if (enabled && !hasValidQr) {
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false)
+                }
+                return@launch
+            }
+
+            val activeId = current.activePaymentQrId ?: allQrs.firstOrNull { it.isEnabled }?.id
+            storeSettingsDao.insertOrUpdateSettings(
+                current.copy(
+                    isScanToPayEnabled = enabled,
+                    activePaymentQrId = activeId
+                )
+            )
+            withContext(Dispatchers.Main) {
+                onComplete?.invoke(true)
+            }
+        }
+    }
+
+    fun updateScanToPayDetails(
+        enabled: Boolean,
+        label: String,
+        activeQrId: Long?,
+        onComplete: (() -> Unit)? = null
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = storeSettingsDao.getSettings() ?: StoreSettings()
+            storeSettingsDao.insertOrUpdateSettings(
+                current.copy(
+                    isScanToPayEnabled = enabled,
+                    scanToPayLabel = label,
+                    activePaymentQrId = activeQrId
+                )
+            )
+            if (activeQrId != null) {
+                paymentQrConfigDao.setDefaultPaymentQr(activeQrId)
+            }
+            withContext(Dispatchers.Main) {
+                onComplete?.invoke()
+            }
+        }
+    }
+
     fun updateBusinessProfile(profile: BusinessProfile) {
         viewModelScope.launch(Dispatchers.IO) {
             businessProfileDao.insertOrUpdateProfile(profile)
@@ -1415,6 +1537,20 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // Owner Security Authentication - strictly isolated to Dedicated Owner PIN/Password or Dedicated Owner Security Key
+    fun isOwnerSecurityConfigured(): Boolean {
+        return ownerSecurityManager.isOwnerSecurityConfigured()
+    }
+
+    fun setupOwnerSecurity(pin: String): Boolean {
+        val clean = pin.trim()
+        val success = ownerSecurityManager.setupOwnerSecurity(clean)
+        if (success) {
+            _ownerSecurityCode.value = clean
+            prefs.edit().putString("owner_security_code", clean).apply()
+        }
+        return success
+    }
+
     fun verifyOwnerSecurityCode(enteredPin: String): Boolean {
         return ownerSecurityManager.verifyCredential(enteredPin)
     }
@@ -1431,40 +1567,30 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         return ownerSecurityManager.regenerateSecurityKey()
     }
 
-    // Developer Master Authentication - strictly isolated to Dedicated Owner Security Password/PIN or Owner Security Key
+    // Developer Master Authentication - strictly unified to ONE Dedicated Owner Security Credential (PIN or Security Key)
     fun verifyDeveloperAuth(enteredKey: String): Boolean {
         val clean = enteredKey.trim()
         if (clean.isBlank()) return false
-
-        // 1. Verify via Dedicated Owner Security Credential (PIN or Security Key)
-        if (ownerSecurityManager.verifyCredential(clean)) {
-            return true
-        }
-
-        // 2. Configured Developer Access Key / Hash in SharedPreferences (if set)
-        val storedDevHash = prefs.getString("developer_auth_hash", null)
-        val hashed = SecurityUtils.sha256(clean)
-        if (storedDevHash != null && (clean == storedDevHash || hashed.equals(storedDevHash, ignoreCase = true))) {
-            return true
-        }
-
-        return false
+        return ownerSecurityManager.verifyCredential(clean)
     }
 
     fun setDeveloperAuthKey(newKey: String) {
         val clean = newKey.trim()
         if (clean.length >= 4) {
-            prefs.edit().putString("developer_auth_hash", SecurityUtils.sha256(clean)).apply()
+            ownerSecurityManager.setPassword(clean)
+            _ownerSecurityCode.value = clean
+            prefs.edit().putString("owner_security_code", clean).remove("developer_auth_hash").apply()
         }
     }
 
-    fun setOwnerSecurityCode(newPin: String) {
+    fun setOwnerSecurityCode(newPin: String): Boolean {
         val clean = newPin.trim()
-        if (clean.length >= 4) {
+        val success = ownerSecurityManager.setPassword(clean)
+        if (success) {
             _ownerSecurityCode.value = clean
-            ownerSecurityManager.setPassword(clean)
             prefs.edit().putString("owner_security_code", clean).apply()
         }
+        return success
     }
 
     fun getInstallationId(): String {
