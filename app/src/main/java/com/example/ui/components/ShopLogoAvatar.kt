@@ -3,6 +3,12 @@ package com.example.ui.components
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material3.Icon
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -65,16 +71,22 @@ fun ShopLogoAvatar(
                 .testTag("custom_shop_logo_avatar")
         )
     } else {
-        Image(
-            painter = painterResource(id = R.drawable.sentry_store_logo_1787989266987),
-            contentDescription = "SENTRY STORE Brand Logo",
-            contentScale = ContentScale.Crop,
+        Box(
             modifier = modifier
                 .size(size)
                 .clip(shape)
-                .border(borderWidth, borderColor, shape)
-                .testTag("default_shop_logo_avatar")
-        )
+                .background(Color(0xFFF1F5F9))
+                .border(borderWidth, borderColor.copy(alpha = 0.5f), shape)
+                .testTag("empty_shop_logo_avatar"),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Storefront,
+                contentDescription = "No Custom Store Logo",
+                tint = borderColor,
+                modifier = Modifier.size(size * 0.5f)
+            )
+        }
     }
 }
 

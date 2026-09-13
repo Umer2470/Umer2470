@@ -146,16 +146,19 @@ object PdfGenerator {
 
         var y = 42f
 
-        // 1. Top Store Header with Custom/Default Logo
-        try {
-            val logoBitmap = BrandingImageHelper.getLogoBitmap(context, invoice.header.logoUri)
-            val logoRect = RectF(40f, 32f, 82f, 74f)
-            canvas.drawBitmap(logoBitmap, null, logoRect, basePaint)
-        } catch (e: Exception) {
-            e.printStackTrace()
+        // 1. Top Store Header with Custom Logo if configured
+        val logoBitmap = BrandingImageHelper.getLogoBitmap(context, invoice.header.logoUri)
+        val textStartX = if (logoBitmap != null) {
+            try {
+                val logoRect = RectF(40f, 32f, 82f, 74f)
+                canvas.drawBitmap(logoBitmap, null, logoRect, basePaint)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            92f
+        } else {
+            40f
         }
-
-        val textStartX = 92f
         canvas.drawText(invoice.header.storeName, textStartX, y, titlePaint)
         y += 15f
         if (invoice.header.tagline.isNotBlank()) {
@@ -276,9 +279,11 @@ object PdfGenerator {
             canvas.drawText("Scan to verify invoice", 40f, y + 22f, mutedPaint)
         }
 
-        // Draw Scan to Pay QR Block if configured and enabled
+        // Draw Scan to Pay QR Block if configured and payment is bank/digital (never on cash)
         val scanToPay = invoice.scanToPay
-        if (scanToPay != null && scanToPay.isEnabled && !scanToPay.imagePath.isNullOrBlank()) {
+        val isEligiblePayment = !InvoiceFormattingService.isCashPayment(invoice.meta.paymentType) &&
+                InvoiceFormattingService.isBankOrDigitalPayment(invoice.meta.paymentType)
+        if (scanToPay != null && scanToPay.isEnabled && !scanToPay.imagePath.isNullOrBlank() && isEligiblePayment) {
             val paymentQrBitmap = PaymentQrImageHelper.getQrBitmap(scanToPay.imagePath)
             if (paymentQrBitmap != null) {
                 val payDest = RectF(160f, y - 80f, 250f, y + 10f)
@@ -387,12 +392,14 @@ object PdfGenerator {
         // Draw Store Logo if available
         try {
             val logoBitmap = BrandingImageHelper.getLogoBitmap(context, invoice.header.logoUri)
-            val logoSize = 34f
-            val logoRect = RectF(centerX - (logoSize / 2), y, centerX + (logoSize / 2), y + logoSize)
-            canvas.drawBitmap(logoBitmap, null, logoRect, textLeft)
-            y += logoSize + 8f
+            if (logoBitmap != null) {
+                val logoSize = 34f
+                val logoRect = RectF(centerX - (logoSize / 2), y, centerX + (logoSize / 2), y + logoSize)
+                canvas.drawBitmap(logoBitmap, null, logoRect, textLeft)
+                y += logoSize + 8f
+            }
         } catch (e: Exception) {
-            y = 25f
+            e.printStackTrace()
         }
 
         // Store Header
@@ -496,9 +503,11 @@ object PdfGenerator {
             y += 12f
         }
 
-        // Scan to Pay QR Code
+        // Scan to Pay QR Code if payment is bank/digital (never on cash)
         val thermalScanToPay = invoice.scanToPay
-        if (thermalScanToPay != null && thermalScanToPay.isEnabled && !thermalScanToPay.imagePath.isNullOrBlank()) {
+        val isThermalEligible = !InvoiceFormattingService.isCashPayment(invoice.meta.paymentType) &&
+                InvoiceFormattingService.isBankOrDigitalPayment(invoice.meta.paymentType)
+        if (thermalScanToPay != null && thermalScanToPay.isEnabled && !thermalScanToPay.imagePath.isNullOrBlank() && isThermalEligible) {
             val paymentQrBitmap = PaymentQrImageHelper.getQrBitmap(thermalScanToPay.imagePath)
             if (paymentQrBitmap != null) {
                 y += 8f

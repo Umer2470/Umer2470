@@ -85,13 +85,14 @@ object BrandingImageHelper {
     }
 
     /**
-     * Loads the logo bitmap from custom file path, or falls back to the default VIP POS logo.
+     * Loads the logo bitmap from custom file path, or returns null if no valid custom logo is configured.
+     * Does NOT fall back to any hardcoded image so invoices respect user configuration cleanly.
      */
-    fun getLogoBitmap(context: Context, logoPath: String?): Bitmap {
+    fun getLogoBitmap(context: Context, logoPath: String?): Bitmap? {
         if (!logoPath.isNullOrBlank()) {
             try {
                 val file = File(logoPath)
-                if (file.exists()) {
+                if (file.exists() && file.length() > 0) {
                     val bitmap = BitmapFactory.decodeFile(file.absolutePath)
                     if (bitmap != null) {
                         return bitmap
@@ -101,7 +102,7 @@ object BrandingImageHelper {
                 e.printStackTrace()
             }
         }
-        return BitmapFactory.decodeResource(context.resources, R.drawable.img_vip_pos_logo)
+        return null
     }
 
     /**

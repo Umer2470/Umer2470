@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +31,7 @@ import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
 import com.example.data.entity.StoreSettings
 import com.example.ui.theme.*
+import com.example.util.BrandingImageHelper
 import com.example.util.EscPosThermalPrinterService
 import com.example.util.InvoiceFormattingService
 import com.example.util.PaymentQrImageHelper
@@ -283,6 +285,19 @@ fun InvoiceReceiptDialog(
                                     .padding(16.dp),
                                 horizontalAlignment = Alignment.CenterHorizontally
                             ) {
+                                val thermalLogo = remember(printableInvoice.header.logoUri) {
+                                    BrandingImageHelper.getLogoBitmap(context, printableInvoice.header.logoUri)
+                                }
+                                if (thermalLogo != null) {
+                                    Image(
+                                        bitmap = thermalLogo.asImageBitmap(),
+                                        contentDescription = "Store Logo",
+                                        modifier = Modifier
+                                            .size(52.dp)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .padding(bottom = 6.dp)
+                                    )
+                                }
                                 Text(
                                     text = printableInvoice.header.storeName,
                                     style = MaterialTheme.typography.titleLarge,
@@ -413,9 +428,11 @@ fun InvoiceReceiptDialog(
                                     )
                                 }
 
-                                // Scan to Pay QR Block (Customer Payment)
+                                // Scan to Pay QR Block (Customer Payment - only on bank/digital, never on cash)
                                 val scanToPay = printableInvoice.scanToPay
-                                if (scanToPay != null && scanToPay.isEnabled && !scanToPay.imagePath.isNullOrBlank()) {
+                                val isScanEligible = !InvoiceFormattingService.isCashPayment(printableInvoice.meta.paymentType) &&
+                                        InvoiceFormattingService.isBankOrDigitalPayment(printableInvoice.meta.paymentType)
+                                if (scanToPay != null && scanToPay.isEnabled && !scanToPay.imagePath.isNullOrBlank() && isScanEligible) {
                                     val paymentQrBitmap = remember(scanToPay.imagePath) {
                                         PaymentQrImageHelper.getQrBitmap(scanToPay.imagePath)
                                     }
@@ -495,6 +512,19 @@ fun InvoiceReceiptDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.Top
                                 ) {
+                                    val a4Logo = remember(printableInvoice.header.logoUri) {
+                                        BrandingImageHelper.getLogoBitmap(context, printableInvoice.header.logoUri)
+                                    }
+                                    if (a4Logo != null) {
+                                        Image(
+                                            bitmap = a4Logo.asImageBitmap(),
+                                            contentDescription = "Store Logo",
+                                            modifier = Modifier
+                                                .size(56.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .padding(end = 12.dp)
+                                        )
+                                    }
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(
                                             text = printableInvoice.header.storeName,
@@ -502,11 +532,13 @@ fun InvoiceReceiptDialog(
                                             fontWeight = FontWeight.Black,
                                             color = Navy900
                                         )
-                                        Text(
-                                            text = "Wholesale & Retail Sanitary Hardware",
-                                            fontSize = 12.sp,
-                                            color = Navy600
-                                        )
+                                        if (printableInvoice.header.tagline.isNotBlank()) {
+                                            Text(
+                                                text = printableInvoice.header.tagline,
+                                                fontSize = 12.sp,
+                                                color = Navy600
+                                            )
+                                        }
                                         Text(
                                             text = printableInvoice.header.address,
                                             fontSize = 11.sp,
@@ -613,9 +645,11 @@ fun InvoiceReceiptDialog(
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
-                                        // Scan to Pay Card for A4 Invoice
+                                        // Scan to Pay Card for A4 Invoice (bank/digital only, never on cash)
                                         val a4ScanToPay = printableInvoice.scanToPay
-                                        if (a4ScanToPay != null && a4ScanToPay.isEnabled && !a4ScanToPay.imagePath.isNullOrBlank()) {
+                                        val isA4Eligible = !InvoiceFormattingService.isCashPayment(printableInvoice.meta.paymentType) &&
+                                                InvoiceFormattingService.isBankOrDigitalPayment(printableInvoice.meta.paymentType)
+                                        if (a4ScanToPay != null && a4ScanToPay.isEnabled && !a4ScanToPay.imagePath.isNullOrBlank() && isA4Eligible) {
                                             val paymentQrBitmap = remember(a4ScanToPay.imagePath) {
                                                 PaymentQrImageHelper.getQrBitmap(a4ScanToPay.imagePath)
                                             }

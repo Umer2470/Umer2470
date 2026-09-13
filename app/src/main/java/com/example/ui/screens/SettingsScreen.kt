@@ -91,6 +91,9 @@ fun SettingsScreen(
             val savedPath = BrandingImageHelper.saveCustomLogoFromUri(context, uri, customLogoUri)
             if (savedPath != null) {
                 customLogoUri = savedPath
+                storeSettings?.let { current ->
+                    viewModel.updateStoreSettings(current.copy(logoUri = savedPath))
+                }
             }
         }
     }
@@ -392,14 +395,14 @@ fun SettingsScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Surface(
-                                color = if (customLogoUri != null) Emerald100 else Navy100,
+                                color = if (customLogoUri != null) Emerald100 else Slate100,
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = if (customLogoUri != null) "✓ Custom Brand Logo Active" else "Default SENTRY STORE Logo Active",
+                                    text = if (customLogoUri != null) "✓ Active Store Logo" else "No Logo (Invoices print cleanly without logo)",
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (customLogoUri != null) Emerald800 else Navy900,
+                                    color = if (customLogoUri != null) Emerald800 else Slate700,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                                 )
                             }
@@ -414,21 +417,27 @@ fun SettingsScreen(
                                 ) {
                                     Icon(Icons.Default.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text(if (customLogoUri != null) "Replace" else "Upload", fontSize = 11.5.sp)
+                                    Text(if (customLogoUri != null) "Replace Logo" else "Upload Logo", fontSize = 11.5.sp)
                                 }
 
-                                OutlinedButton(
-                                    onClick = {
-                                        BrandingImageHelper.deleteOldCustomLogo(customLogoUri)
-                                        customLogoUri = null
-                                    },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-                                    modifier = Modifier.height(36.dp).testTag("restore_default_logo_button")
-                                ) {
-                                    Icon(Icons.Default.Restore, contentDescription = null, modifier = Modifier.size(16.dp))
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Default", fontSize = 11.5.sp)
+                                if (customLogoUri != null) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            BrandingImageHelper.deleteOldCustomLogo(customLogoUri)
+                                            customLogoUri = null
+                                            storeSettings?.let { current ->
+                                                viewModel.updateStoreSettings(current.copy(logoUri = null))
+                                            }
+                                        },
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Rose600),
+                                        shape = RoundedCornerShape(8.dp),
+                                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                        modifier = Modifier.height(36.dp).testTag("remove_logo_button")
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Remove", fontSize = 11.5.sp)
+                                    }
                                 }
                             }
                         }

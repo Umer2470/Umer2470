@@ -77,6 +77,35 @@ data class InvoiceTotals(
 
 object InvoiceFormattingService {
 
+    fun isCashPayment(paymentType: String?): Boolean {
+        if (paymentType.isNullOrBlank()) return true
+        val normalized = paymentType.trim().lowercase()
+        return normalized == "cash" ||
+                normalized.startsWith("cash ") ||
+                normalized == "cash on delivery" ||
+                normalized == "cod"
+    }
+
+    fun isBankOrDigitalPayment(paymentType: String?): Boolean {
+        if (paymentType.isNullOrBlank()) return false
+        if (isCashPayment(paymentType)) return false
+        val normalized = paymentType.trim().lowercase()
+        return normalized.contains("bank") ||
+                normalized.contains("transfer") ||
+                normalized.contains("card") ||
+                normalized.contains("online") ||
+                normalized.contains("digital") ||
+                normalized.contains("easypaisa") ||
+                normalized.contains("jazzcash") ||
+                normalized.contains("raast") ||
+                normalized.contains("upaisa") ||
+                normalized.contains("nayapay") ||
+                normalized.contains("sadapay") ||
+                normalized.contains("wallet") ||
+                normalized.contains("qr") ||
+                normalized.contains("pos")
+    }
+
     fun formatSaleTransaction(
         sale: Sale,
         items: List<SaleItem>,
@@ -123,7 +152,15 @@ object InvoiceFormattingService {
             appendLine("Verification ID: VER-${sale.invoiceNumber}")
         }
 
-        val scanToPay = if (settings.isScanToPayEnabled && activePaymentQr != null && activePaymentQr.isEnabled && activePaymentQr.imagePath.isNotBlank()) {
+        val isDigitalOrBank = !isCashPayment(sale.paymentType) && isBankOrDigitalPayment(sale.paymentType)
+
+        val scanToPay = if (
+            isDigitalOrBank &&
+            settings.isScanToPayEnabled &&
+            activePaymentQr != null &&
+            activePaymentQr.isEnabled &&
+            activePaymentQr.imagePath.isNotBlank()
+        ) {
             ScanToPayInfo(
                 isEnabled = true,
                 headerLabel = settings.scanToPayLabel.ifBlank { "SCAN TO PAY" },
@@ -181,9 +218,14 @@ object InvoiceFormattingService {
         val doubleDivider = "=".repeat(width)
 
         fun center(text: String): String {
-            if (text.length >= width) return text.take(width)
-            val padding = (width - text.length) / 2
-            return " ".repeat(padding) + text
+            if (text.length <= width) {
+                val padding = (width - text.length) / 2
+                return " ".repeat(padding) + text
+            }
+            return text.chunked(width).joinToString("\n") { chunk ->
+                val padding = (width - chunk.length).coerceAtLeast(0) / 2
+                " ".repeat(padding) + chunk
+            }
         }
 
         fun row(left: String, right: String): String {
@@ -230,16 +272,16 @@ object InvoiceFormattingService {
             }
             appendLine(doubleDivider)
             val scanToPay = invoice.scanToPay
-            if (scanToPay != null && scanToPay.isEnabled) {
+            val isEligible = !isCashPayment(invoice.meta.paymentType) && isBankOrDigitalPayment(invoice.meta.paymentType)
+            if (scanToPay != null && scanToPay.isEnabled && isEligible) {
                 appendLine(center(scanToPay.headerLabel.ifBlank { "SCAN TO PAY" }))
                 appendLine(center("[ PAYMENT QR CODE ]"))
-                val methodLine = buildString {
-                    append(scanToPay.paymentType)
-                    if (scanToPay.accountNumber.isNotBlank()) append(": ${scanToPay.accountNumber}")
+                appendLine(center(scanToPay.paymentType))
+                if (scanToPay.accountNumber.isNotBlank()) {
+                    appendLine(center("A/C: ${scanToPay.accountNumber}"))
                 }
-                appendLine(center(methodLine))
                 if (scanToPay.accountTitle.isNotBlank()) {
-                    appendLine(center("A/C: ${scanToPay.accountTitle}"))
+                    appendLine(center("Title: ${scanToPay.accountTitle}"))
                 }
                 if (scanToPay.instructions.isNotBlank()) {
                     appendLine(center(scanToPay.instructions))

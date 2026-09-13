@@ -60,13 +60,19 @@ fun EditInvoiceDialog(
         if (calculatedItemsSum > 0) calculatedItemsSum else sale.totalAmount
     }
 
-    val discount = discountInput.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
-    val taxRate = taxRateInput.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+    val discount = discountInput.toDoubleOrNull()?.let {
+        if (it.isNaN() || it.isInfinite() || it < 0.0) 0.0 else it.coerceAtMost(subtotal)
+    } ?: 0.0
+    val taxRate = taxRateInput.toDoubleOrNull()?.let {
+        if (it.isNaN() || it.isInfinite() || it < 0.0) 0.0 else it
+    } ?: 0.0
     val taxableAmount = (subtotal - discount).coerceAtLeast(0.0)
     val taxAmount = (taxableAmount * taxRate) / 100.0
     val netAmount = (taxableAmount + taxAmount).coerceAtLeast(0.0)
 
-    val paidAmount = paidAmountInput.toDoubleOrNull()?.coerceAtLeast(0.0) ?: 0.0
+    val paidAmount = paidAmountInput.toDoubleOrNull()?.let {
+        if (it.isNaN() || it.isInfinite() || it < 0.0) 0.0 else it
+    } ?: 0.0
     val dueAmount = (netAmount - paidAmount).coerceAtLeast(0.0)
     val changeReturn = (paidAmount - netAmount).coerceAtLeast(0.0)
 

@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.data.entity.PaymentQrConfig
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
 import com.example.data.entity.StoreSettings
@@ -63,7 +64,8 @@ class InvoiceFormattingServiceTest {
             customerName = "Cash Buyer",
             totalAmount = 100.0,
             netAmount = 100.0,
-            paidAmount = 100.0
+            paidAmount = 100.0,
+            paymentType = "Cash"
         )
         val items = listOf(
             SaleItem(id = 1L, saleId = 2L, productId = 1L, productName = "Item A", salePrice = 100.0, quantity = 1.0, totalPrice = 100.0)
@@ -75,5 +77,76 @@ class InvoiceFormattingServiceTest {
         assertTrue(text.contains("POS STORE"))
         assertTrue(text.contains("INV-100"))
         assertTrue(text.contains("Item A"))
+        assertFalse("Cash payments must never show Scan to Pay", text.contains("SCAN TO PAY"))
+    }
+
+    @Test
+    fun testScanToPayQrHiddenOnCashPayment() {
+        val cashSale = Sale(
+            id = 3L,
+            invoiceNumber = "INV-CASH-1",
+            totalAmount = 200.0,
+            netAmount = 200.0,
+            paidAmount = 200.0,
+            paymentType = "Cash"
+        )
+        val items = listOf(
+            SaleItem(id = 1L, saleId = 3L, productId = 1L, productName = "Hardware Item", salePrice = 200.0, quantity = 1.0, totalPrice = 200.0)
+        )
+        val settings = StoreSettings(
+            storeName = "SENTRY STORE",
+            isScanToPayEnabled = true
+        )
+        val qrConfig = PaymentQrConfig(
+            id = 1L,
+            name = "Easypaisa",
+            paymentType = "Easypaisa",
+            accountNumber = "03001234567",
+            accountTitle = "Store Account",
+            imagePath = "/data/user/0/com.example/qr_1.png",
+            isEnabled = true
+        )
+
+        val invoice = InvoiceFormattingService.formatSaleTransaction(cashSale, items, settings, qrConfig)
+        assertNull("Scan-to-Pay QR must be null for cash payments", invoice.scanToPay)
+
+        val thermalText = InvoiceFormattingService.generateThermalText(invoice, 32)
+        assertFalse("Thermal text for cash invoice must not contain SCAN TO PAY", thermalText.contains("SCAN TO PAY"))
+    }
+
+    @Test
+    fun testScanToPayQrVisibleOnBankAndDigitalPayments() {
+        val digitalSale = Sale(
+            id = 4L,
+            invoiceNumber = "INV-DIGITAL-1",
+            totalAmount = 500.0,
+            netAmount = 500.0,
+            paidAmount = 500.0,
+            paymentType = "Bank Transfer"
+        )
+        val items = listOf(
+            SaleItem(id = 1L, saleId = 4L, productId = 1L, productName = "Sanitary Pipe", salePrice = 500.0, quantity = 1.0, totalPrice = 500.0)
+        )
+        val settings = StoreSettings(
+            storeName = "SENTRY STORE",
+            isScanToPayEnabled = true
+        )
+        val qrConfig = PaymentQrConfig(
+            id = 1L,
+            name = "HBL Bank",
+            paymentType = "Bank Transfer",
+            accountNumber = "PK12HABB0001234567890",
+            accountTitle = "Sentry Hardware",
+            imagePath = "/data/user/0/com.example/qr_bank.png",
+            isEnabled = true
+        )
+
+        val invoice = InvoiceFormattingService.formatSaleTransaction(digitalSale, items, settings, qrConfig)
+        assertNotNull("Scan-to-Pay QR must be present for Bank Transfer", invoice.scanToPay)
+        assertEquals("Bank Transfer", invoice.scanToPay?.paymentType)
+
+        val thermalText = InvoiceFormattingService.generateThermalText(invoice, 32)
+        assertTrue("Thermal text for bank transfer must contain SCAN TO PAY", thermalText.contains("SCAN TO PAY"))
+        assertTrue("Thermal text must contain account number", thermalText.contains("PK12HABB0001234567890"))
     }
 }

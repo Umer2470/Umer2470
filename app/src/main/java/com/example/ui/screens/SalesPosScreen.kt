@@ -610,9 +610,15 @@ fun SalesPosScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        val q = editQty.trim().toDoubleOrNull() ?: item.quantity
-                        val p = editPrice.trim().toDoubleOrNull() ?: item.unitPrice
-                        val d = editDisc.trim().toDoubleOrNull() ?: 0.0
+                        val q = editQty.trim().toDoubleOrNull()?.let {
+                            if (it.isNaN() || it.isInfinite() || it <= 0.0) item.quantity else it
+                        } ?: item.quantity
+                        val p = editPrice.trim().toDoubleOrNull()?.let {
+                            if (it.isNaN() || it.isInfinite() || it < 0.0) item.unitPrice else it
+                        } ?: item.unitPrice
+                        val d = editDisc.trim().toDoubleOrNull()?.let {
+                            if (it.isNaN() || it.isInfinite() || it < 0.0) 0.0 else it
+                        } ?: 0.0
                         viewModel.updateCartItemFull(
                             productId = item.product.id,
                             quantity = q.coerceAtLeast(0.01),
@@ -765,12 +771,12 @@ fun SalesPosScreen(
                         val clean = discVal.trim()
                         val parsed = if (clean.endsWith("%")) {
                             val pctVal = clean.removeSuffix("%").trim().toDoubleOrNull()
-                            if (pctVal != null) (subtotal * pctVal) / 100.0 else null
+                            if (pctVal != null && !pctVal.isNaN() && !pctVal.isInfinite()) (subtotal * pctVal) / 100.0 else null
                         } else {
                             clean.toDoubleOrNull()
                         }
 
-                        if (parsed == null || parsed < 0.0) {
+                        if (parsed == null || parsed.isNaN() || parsed.isInfinite() || parsed < 0.0) {
                             discError = "Please enter a valid positive discount amount."
                         } else if (parsed > subtotal) {
                             discError = "Discount cannot exceed subtotal ($currency %.2f)".format(subtotal)
