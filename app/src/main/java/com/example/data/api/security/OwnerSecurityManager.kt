@@ -141,50 +141,73 @@ class OwnerSecurityManager private constructor(context: Context) {
     }
 
     /**
-     * Verifies whether the provided credential matches:
-     * 1. Configured Dedicated Owner Security Password / PIN
-     * OR
-     * 2. Dedicated Owner Security Key
+     * Verifies whether the provided credential matches the Configured Dedicated Owner Security Password / PIN.
      *
-     * Returns true ONLY for verified dedicated owner credentials.
-     * Common backdoors (9999, phone numbers, cashier/admin PINs) are strictly rejected.
+     * CRITICAL SECURITY RULE:
+     * - The displayed Owner Security Key (Cryptographic Device Identifier) MUST NEVER unlock Owner Mode.
+     * - Only the dedicated private Owner PIN/Password unlocks Owner Mode.
+     * - Common backdoors (9999, phone numbers, cashier/admin PINs) and Owner Keys are strictly rejected.
      */
     fun verifyCredential(input: String): Boolean {
         val clean = input.trim()
         if (clean.isBlank()) return false
         if (clean == "9999" || clean == "03080018035") return false // Explicitly reject unauthorized backdoors
 
+        // CRITICAL: Owner Key is a cryptographic hardware/device identifier, NOT an authentication password.
+        val storedRawKey = getSecurityKey()
+        if (clean.startsWith("OWNER-KEY-", ignoreCase = true) ||
+            (storedRawKey.isNotBlank() && clean.equals(storedRawKey, ignoreCase = true))
+        ) {
+            return false // Owner Key must NEVER unlock Owner Mode
+        }
+
+        if (isDisallowedCredential(clean)) return false
+
         val salt = prefs.getString(KEY_SALT, "") ?: ""
         val inputHash = hashWithSalt(clean, salt)
 
         val storedPinHash = prefs.getString(KEY_OWNER_PIN_HASH, null)
-        val storedKeyHash = prefs.getString(KEY_OWNER_SECURITY_KEY_HASH, null)
-        val storedRawKey = prefs.getString(KEY_OWNER_SECURITY_KEY, null)
         val hashOf9999 = hashWithSalt("9999", salt)
 
-        // 1. Match Dedicated Owner PIN / Password (only if configured and not 9999)
+        // Match ONLY Dedicated Owner PIN / Password (only if configured and not 9999)
         if (isOwnerSecurityConfigured() && storedPinHash != null && !storedPinHash.equals(hashOf9999, ignoreCase = true)) {
             if (inputHash.equals(storedPinHash, ignoreCase = true)) {
                 return true
             }
         }
 
-        // 2. Match Dedicated Owner Security Key (Hash or exact raw key)
-        if (storedKeyHash != null && inputHash.equals(storedKeyHash, ignoreCase = true)) {
-            return true
-        }
-        if (storedRawKey != null && clean.equals(storedRawKey, ignoreCase = true)) {
-            return true
-        }
-
         return false
     }
 
     /**
-     * Retrieves the dedicated Owner Security Key for display to the verified proprietor.
+     * Retrieves the dedicated Owner Security Key.
      */
     fun getSecurityKey(): String {
         return prefs.getString(KEY_OWNER_SECURITY_KEY, "") ?: ""
+    }
+
+    /**
+     * Retrieves the masked dedicated Owner Security Key for safe display.
+     * Prevents shoulder-surfing and accidental copy-pasting into authentication inputs.
+     */
+    fun getMaskedSecurityKey(): String {
+        val rawKey = getSecurityKey()
+        if (rawKey.isBlank()) return "OWNER-KEY-••••••••••••"
+        val suffix = if (rawKey.length >= 4) rawKey.takeLast(4) else ""
+        return "OWNER-KEY-••••••••$suffix"
+    }
+
+    /**
+     * Changes the Dedicated Owner Security Password / PIN with mandatory verification of current PIN.
+     * Old PIN immediately becomes invalid.
+     * The Owner Key cannot be used as current or new PIN.
+     */
+    fun changePassword(currentPassword: String, newPassword: String): Boolean {
+        val cleanCurrent = currentPassword.trim()
+        if (!verifyCredential(cleanCurrent)) {
+            return false
+        }
+        return setPassword(newPassword)
     }
 
     /**
@@ -195,6 +218,13 @@ class OwnerSecurityManager private constructor(context: Context) {
         val clean = newPassword.trim()
         if (clean.length < 4) return false
         if (isDisallowedCredential(clean)) return false
+
+        val storedRawKey = getSecurityKey()
+        if (clean.startsWith("OWNER-KEY-", ignoreCase = true) ||
+            (storedRawKey.isNotBlank() && clean.equals(storedRawKey, ignoreCase = true))
+        ) {
+            return false
+        }
 
         val salt = prefs.getString(KEY_SALT, "") ?: ""
         val newHash = hashWithSalt(clean, salt)

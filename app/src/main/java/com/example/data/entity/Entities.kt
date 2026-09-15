@@ -20,7 +20,13 @@ data class Product(
     val description: String = "",
     val branchId: Long = 1,
     val isDeleted: Boolean = false,
-    val updatedAt: Long = System.currentTimeMillis()
+    val updatedAt: Long = System.currentTimeMillis(),
+    val expiryDate: Long? = null,
+    val batchNumber: String = "",
+    val secondaryUnit: String = "",
+    val unitConversionRate: Double = 1.0,
+    val isTaxExempt: Boolean = false,
+    val customTaxRate: Double = 0.0
 )
 
 @JsonClass(generateAdapter = true)

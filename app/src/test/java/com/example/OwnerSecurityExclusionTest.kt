@@ -64,14 +64,14 @@ class OwnerSecurityExclusionTest {
     }
 
     @Test
-    fun testDedicatedOwnerSecurityKeyAccepted() {
+    fun testDedicatedOwnerSecurityKeyRejectedAsPassword() {
         val securityKey = ownerSecurityManager.getSecurityKey()
         assertNotNull("Owner Security Key should not be null", securityKey)
         assertTrue("Owner Security Key should start with OWNER-KEY-", securityKey.startsWith("OWNER-KEY-"))
 
-        // Must verify with the dedicated Security Key
-        assertTrue(
-            "Dedicated Owner Security Key must unlock Owner access",
+        // Must reject the Security Key as a login password
+        assertFalse(
+            "Dedicated Owner Security Key MUST NOT unlock Owner access as a password",
             ownerSecurityManager.verifyCredential(securityKey)
         )
     }
@@ -117,17 +117,15 @@ class OwnerSecurityExclusionTest {
     @Test
     fun testRegenerateOwnerSecurityKey() {
         val originalKey = ownerSecurityManager.getSecurityKey()
-        assertTrue(ownerSecurityManager.verifyCredential(originalKey))
+        assertFalse("Original key must not unlock as password", ownerSecurityManager.verifyCredential(originalKey))
 
         val newKey = ownerSecurityManager.regenerateSecurityKey()
         assertNotEquals("New security key must differ from original", originalKey, newKey)
         assertTrue("New key must start with OWNER-KEY-", newKey.startsWith("OWNER-KEY-"))
 
-        // New key accepted
-        assertTrue("New key must be accepted", ownerSecurityManager.verifyCredential(newKey))
-
-        // Old key rejected
-        assertFalse("Old key must be revoked and rejected", ownerSecurityManager.verifyCredential(originalKey))
+        // New key also cannot be used as password
+        assertFalse("New key must not unlock as password", ownerSecurityManager.verifyCredential(newKey))
+        assertFalse("Old key must be rejected", ownerSecurityManager.verifyCredential(originalKey))
     }
 
     @Test
@@ -150,10 +148,10 @@ class OwnerSecurityExclusionTest {
         assertTrue("ViewModel verifyOwnerSecurityCredential accepts configured PIN", vm.verifyOwnerSecurityCredential("5678"))
         assertTrue("ViewModel verifyDeveloperAuth accepts configured PIN", vm.verifyDeveloperAuth("5678"))
 
-        // Verify Owner Security Key through ViewModel
+        // Verify Owner Security Key is rejected as password through ViewModel
         val key = vm.getOwnerSecurityKey()
-        assertTrue("ViewModel verifyOwnerSecurityCode accepts Security Key", vm.verifyOwnerSecurityCode(key))
-        assertTrue("ViewModel verifyDeveloperAuth accepts Security Key", vm.verifyDeveloperAuth(key))
+        assertFalse("ViewModel verifyOwnerSecurityCode must reject Security Key", vm.verifyOwnerSecurityCode(key))
+        assertFalse("ViewModel verifyDeveloperAuth must reject Security Key", vm.verifyDeveloperAuth(key))
 
         // Strict rejection of other credentials
         assertFalse("ViewModel rejects 9999 bypass", vm.verifyOwnerSecurityCode("9999"))

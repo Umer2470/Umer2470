@@ -54,6 +54,7 @@ fun InvoiceReceiptDialog(
     activePaymentQr: PaymentQrConfig? = null,
     onDismiss: () -> Unit,
     onEditRequest: ((Sale) -> Unit)? = null,
+    onReturnRequest: ((Sale) -> Unit)? = null,
     onDeleteRequest: ((Sale) -> Unit)? = null
 ) {
     val context = LocalContext.current
@@ -127,6 +128,22 @@ fun InvoiceReceiptDialog(
                                     imageVector = Icons.Default.Edit,
                                     contentDescription = "Edit Invoice",
                                     tint = Gold400
+                                )
+                            }
+                        }
+
+                        if (onReturnRequest != null) {
+                            IconButton(
+                                onClick = {
+                                    onDismiss()
+                                    onReturnRequest(sale)
+                                },
+                                modifier = Modifier.testTag("receipt_return_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.KeyboardReturn,
+                                    contentDescription = "Return / Exchange Items",
+                                    tint = Amber500
                                 )
                             }
                         }

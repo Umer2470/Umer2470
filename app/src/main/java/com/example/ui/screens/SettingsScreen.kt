@@ -761,7 +761,23 @@ fun SettingsScreen(
                 storeSettings = storeSettings
             )
 
-            // 5. Biometric Security & Hardware Peripherals
+            // 4.1 FBR / Digital Tax Integration (Optional Master Module)
+            com.example.ui.components.FbrSettingsSection(
+                viewModel = viewModel,
+                storeSettings = storeSettings
+            )
+
+            // 5. Google Drive Backup & Recovery
+            SectionHeader(
+                title = "Google Drive Backup & Cloud Recovery",
+                subtitle = "AES-256-GCM encrypted database snapshots, automatic schedules & recovery"
+            )
+            com.example.ui.components.BackupRecoverySettingsCard(
+                viewModel = viewModel,
+                onNavigateToHub = { onNavigate("backup_recovery") }
+            )
+
+            // 6. Biometric Security & Hardware Peripherals
             SectionHeader(title = "Biometric Security & Hardware Peripherals", subtitle = "Fingerprint unlock, Camera Barcode Scanner & Laser inputs")
 
             Card(
@@ -1030,6 +1046,7 @@ fun SettingsScreen(
 
             listOf(
                 Triple("👑 Owner Control Center", "Master PIN, license tools & proprietor hub", "owner_control_center"),
+                Triple("☁️ Cloud Backup & Recovery", "Google Drive sync, automatic snapshots & restore", "backup_recovery"),
                 Triple("🚀 Developer Platform Hub", "Multi-app management, license registry & hardware binding", "developer_hub"),
                 Triple("Store Management Center", "Multi-branch and outlet configurations", "store_management"),
                 Triple("Store Access & Roles", "Role permissions & security rules", "access_management"),

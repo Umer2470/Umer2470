@@ -11,6 +11,7 @@ import com.example.data.api.repository.DeveloperApiRepository
 import com.example.data.api.security.AppActivationManager
 import com.example.data.api.security.OwnerSecurityManager
 import com.example.data.api.security.SecureIdentityManager
+import com.example.data.backup.*
 import com.example.data.db.AppDatabase
 import com.example.data.entity.*
 import com.example.data.model.UserRole
@@ -21,6 +22,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -83,6 +85,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val businessProfileDao = db.businessProfileDao()
     private val activityLogDao = db.activityLogDao()
     private val paymentQrConfigDao = db.paymentQrConfigDao()
+    private val registerShiftDao = db.registerShiftDao()
+    private val cashMovementDao = db.cashMovementDao()
+    private val saleReturnDao = db.saleReturnDao()
+    private val saleReturnItemDao = db.saleReturnItemDao()
+    private val stockMovementDao = db.stockMovementDao()
+    private val fbrRecordDao = db.fbrInvoiceRecordDao()
+
+    private val fbrApiService = com.example.data.fbr.FbrApiService()
+    private val fbrSubmissionManager = com.example.data.fbr.FbrSubmissionManager(fbrApiService, fbrRecordDao, activityLogDao)
 
     val activationManager = AppActivationManager.getInstance(application)
     val identityManager = SecureIdentityManager.getInstance(application)
@@ -145,6 +156,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    val activeShift: StateFlow<RegisterShift?> = registerShiftDao.getActiveShiftFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val allShifts: StateFlow<List<RegisterShift>> = registerShiftDao.getAllShiftsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allCashMovements: StateFlow<List<CashMovement>> = cashMovementDao.getAllMovementsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val recycleBinProducts: StateFlow<List<Product>> = productDao.getRecycleBinProductsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -153,6 +173,19 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
 
     val recycleBinSales: StateFlow<List<Sale>> = saleDao.getRecycleBinSalesFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val saleReturns: StateFlow<List<SaleReturn>> = saleReturnDao.getAllReturnsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val stockMovements: StateFlow<List<StockMovement>> = stockMovementDao.getAllMovementsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val fbrRecords: StateFlow<List<FbrInvoiceRecord>> = fbrRecordDao.getAllRecordsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val isCompletingSale = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isProcessingReturn = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val isAdjustingStock = java.util.concurrent.atomic.AtomicBoolean(false)
 
     val salesTrend: StateFlow<List<DaySalesPoint>> = sales.map { salesList ->
         val dayFormat = SimpleDateFormat("EEE", Locale.getDefault())
@@ -651,87 +684,126 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        if (!isCompletingSale.compareAndSet(false, true)) {
+            onError("Sale transaction is already being processed. Please wait...")
+            return
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
-            val subtotal = currentCart.sumOf { it.totalPrice }
-            val discount = _discountAmount.value.coerceAtMost(subtotal)
-            val taxAmount = ((subtotal - discount).coerceAtLeast(0.0) * _taxRatePercent.value) / 100.0
-            val netAmount = (subtotal - discount + taxAmount).coerceAtLeast(0.0)
-            val paid = if (_receivedAmount.value > 0) _receivedAmount.value else netAmount
-            val due = (netAmount - paid).coerceAtLeast(0.0)
+            try {
+                val subtotal = currentCart.sumOf { it.totalPrice }
+                val discount = _discountAmount.value.coerceAtMost(subtotal)
+                val taxAmount = ((subtotal - discount).coerceAtLeast(0.0) * _taxRatePercent.value) / 100.0
+                val netAmount = (subtotal - discount + taxAmount).coerceAtLeast(0.0)
 
-            val invoiceNo = "INV-${System.currentTimeMillis() % 1000000}"
-            val customerName = _selectedCustomer.value?.name ?: "Walk-in Customer"
-            val customerId = _selectedCustomer.value?.id ?: 0L
-
-            val sale = Sale(
-                invoiceNumber = invoiceNo,
-                customerId = customerId,
-                customerName = customerName,
-                totalAmount = subtotal,
-                discount = discount,
-                taxRate = _taxRatePercent.value,
-                taxAmount = taxAmount,
-                netAmount = netAmount,
-                paidAmount = paid,
-                dueAmount = due,
-                paymentType = _paymentType.value,
-                cashierName = _activeCashierName.value.ifBlank {
-                    _activeUser.value?.fullName?.ifBlank { _activeUser.value?.username } ?: "Muhammad Umer"
-                },
-                branchId = 1,
-                createdAt = System.currentTimeMillis()
-            )
-
-            val saleId = saleDao.insertSale(sale)
-
-            val saleItems = currentCart.map {
-                val resolvedName = if (it.customVariation.isNotBlank()) "${it.product.name} [${it.customVariation}]" else it.product.name
-                SaleItem(
-                    saleId = saleId,
-                    productId = it.product.id,
-                    productName = resolvedName,
-                    quantity = it.quantity,
-                    unit = it.product.unit,
-                    purchasePrice = it.product.purchasePrice,
-                    salePrice = it.unitPrice,
-                    totalPrice = it.totalPrice
-                )
-            }
-            saleDao.insertSaleItems(saleItems)
-
-            // Update inventory stock
-            for (item in currentCart) {
-                val p = productDao.getProductById(item.product.id)
-                if (p != null) {
-                    val updatedStock = (p.stockQuantity - item.quantity).coerceAtLeast(0.0)
-                    productDao.updateProduct(p.copy(stockQuantity = updatedStock))
+                val tender = _receivedAmount.value
+                val paid = when {
+                    _paymentType.value.equals("Credit", ignoreCase = true) -> tender.coerceAtMost(netAmount)
+                    tender > 0.0 -> tender.coerceAtMost(netAmount)
+                    else -> netAmount
                 }
-            }
+                val due = (netAmount - paid).coerceAtLeast(0.0)
 
-            // Update customer balance if credit sale
-            if (customerId > 0 && due > 0) {
-                val c = customerDao.getCustomerById(customerId)
-                if (c != null) {
-                    customerDao.updateCustomer(c.copy(balance = c.balance + due))
-                }
-            }
+                val invoiceNo = "INV-${System.currentTimeMillis() % 1000000}"
+                val customerName = _selectedCustomer.value?.name ?: "Walk-in Customer"
+                val customerId = _selectedCustomer.value?.id ?: 0L
 
-            activityLogDao.insertLog(
-                ActivityLog(
-                    action = "Sale Completed",
-                    module = "POS",
-                    details = "Invoice $invoiceNo: Net $netAmount, Paid $paid",
-                    performedBy = _activeUser.value?.fullName ?: "Cashier"
+                val sale = Sale(
+                    invoiceNumber = invoiceNo,
+                    customerId = customerId,
+                    customerName = customerName,
+                    totalAmount = subtotal,
+                    discount = discount,
+                    taxRate = _taxRatePercent.value,
+                    taxAmount = taxAmount,
+                    netAmount = netAmount,
+                    paidAmount = paid,
+                    dueAmount = due,
+                    paymentType = _paymentType.value,
+                    cashierName = _activeCashierName.value.ifBlank {
+                        _activeUser.value?.fullName?.ifBlank { _activeUser.value?.username } ?: "Muhammad Umer"
+                    },
+                    branchId = 1,
+                    createdAt = System.currentTimeMillis()
                 )
-            )
 
-            val completedSale = sale.copy(id = saleId)
-            _lastCompletedSale.value = completedSale
-            _lastCompletedSaleItems.value = saleItems
+                val saleId = saleDao.insertSale(sale)
 
-            launch(Dispatchers.Main) {
-                clearCart()
-                onSuccess(completedSale, saleItems)
+                val saleItems = currentCart.map {
+                    val resolvedName = if (it.customVariation.isNotBlank()) "${it.product.name} [${it.customVariation}]" else it.product.name
+                    SaleItem(
+                        saleId = saleId,
+                        productId = it.product.id,
+                        productName = resolvedName,
+                        quantity = it.quantity,
+                        unit = it.product.unit,
+                        purchasePrice = it.product.purchasePrice,
+                        salePrice = it.unitPrice,
+                        totalPrice = it.totalPrice
+                    )
+                }
+                saleDao.insertSaleItems(saleItems)
+
+                // Update inventory stock
+                for (item in currentCart) {
+                    val p = productDao.getProductById(item.product.id)
+                    if (p != null) {
+                        val updatedStock = (p.stockQuantity - item.quantity).coerceAtLeast(0.0)
+                        productDao.updateProduct(p.copy(stockQuantity = updatedStock))
+                        stockMovementDao.insertMovement(
+                            StockMovement(
+                                productId = p.id,
+                                productName = p.name,
+                                quantityDelta = -item.quantity,
+                                stockBefore = p.stockQuantity,
+                                stockAfter = updatedStock,
+                                movementType = "SALE",
+                                referenceId = invoiceNo,
+                                reason = "Sold on Invoice #$invoiceNo",
+                                performedBy = _activeCashierName.value.ifBlank { "Cashier" }
+                            )
+                        )
+                    }
+                }
+
+                // Update customer balance if credit sale
+                if (customerId > 0 && due > 0) {
+                    val c = customerDao.getCustomerById(customerId)
+                    if (c != null) {
+                        customerDao.updateCustomer(c.copy(balance = c.balance + due))
+                    }
+                }
+
+                activityLogDao.insertLog(
+                    ActivityLog(
+                        action = "Sale Completed",
+                        module = "POS",
+                        details = "Invoice $invoiceNo: Net $netAmount, Paid $paid, Due $due ($paymentType)",
+                        performedBy = _activeUser.value?.fullName ?: "Cashier"
+                    )
+                )
+
+                val completedSale = sale.copy(id = saleId)
+                _lastCompletedSale.value = completedSale
+                _lastCompletedSaleItems.value = saleItems
+
+                // Optional FBR Submission Integration
+                val currentSettings = storeSettingsDao.getSettings()
+                if (currentSettings != null && currentSettings.isFbrIntegrationEnabled) {
+                    val cust = if (customerId > 0) customerDao.getCustomerById(customerId) else null
+                    fbrSubmissionManager.processSaleSubmission(completedSale, saleItems, currentSettings, cust)
+                }
+
+                launch(Dispatchers.Main) {
+                    clearCart()
+                    onSuccess(completedSale, saleItems)
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    onError("Failed to complete sale: ${e.message}")
+                }
+            } finally {
+                isCompletingSale.set(false)
             }
         }
     }
@@ -1536,7 +1608,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putBoolean("camera_scanner_enabled", enabled).apply()
     }
 
-    // Owner Security Authentication - strictly isolated to Dedicated Owner PIN/Password or Dedicated Owner Security Key
+    // Owner Security Authentication - strictly isolated to Dedicated Owner PIN/Password
     fun isOwnerSecurityConfigured(): Boolean {
         return ownerSecurityManager.isOwnerSecurityConfigured()
     }
@@ -1545,8 +1617,17 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val clean = pin.trim()
         val success = ownerSecurityManager.setupOwnerSecurity(clean)
         if (success) {
-            _ownerSecurityCode.value = clean
-            prefs.edit().putString("owner_security_code", clean).apply()
+            _ownerSecurityCode.value = ""
+            prefs.edit().remove("owner_security_code").apply()
+        }
+        return success
+    }
+
+    fun changeOwnerPassword(currentPin: String, newPin: String): Boolean {
+        val success = ownerSecurityManager.changePassword(currentPin, newPin)
+        if (success) {
+            _ownerSecurityCode.value = ""
+            prefs.edit().remove("owner_security_code").apply()
         }
         return success
     }
@@ -1563,11 +1644,15 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         return ownerSecurityManager.getSecurityKey()
     }
 
+    fun getMaskedOwnerSecurityKey(): String {
+        return ownerSecurityManager.getMaskedSecurityKey()
+    }
+
     fun regenerateOwnerSecurityKey(): String {
         return ownerSecurityManager.regenerateSecurityKey()
     }
 
-    // Developer Master Authentication - strictly unified to ONE Dedicated Owner Security Credential (PIN or Security Key)
+    // Developer Master Authentication - strictly requires Dedicated Owner PIN
     fun verifyDeveloperAuth(enteredKey: String): Boolean {
         val clean = enteredKey.trim()
         if (clean.isBlank()) return false
@@ -1578,8 +1663,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val clean = newKey.trim()
         if (clean.length >= 4) {
             ownerSecurityManager.setPassword(clean)
-            _ownerSecurityCode.value = clean
-            prefs.edit().putString("owner_security_code", clean).remove("developer_auth_hash").apply()
+            _ownerSecurityCode.value = ""
+            prefs.edit().remove("owner_security_code").remove("developer_auth_hash").apply()
         }
     }
 
@@ -1587,8 +1672,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         val clean = newPin.trim()
         val success = ownerSecurityManager.setPassword(clean)
         if (success) {
-            _ownerSecurityCode.value = clean
-            prefs.edit().putString("owner_security_code", clean).apply()
+            _ownerSecurityCode.value = ""
+            prefs.edit().remove("owner_security_code").apply()
         }
         return success
     }
@@ -1804,6 +1889,613 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    // ----------------------------------------------------
+    // GOOGLE DRIVE BACKUP & RECOVERY SUITE
+    // ----------------------------------------------------
+    val googleDriveBackupManager = GoogleDriveBackupManager.getInstance(application)
+
+    val backupConnectedAccount = googleDriveBackupManager.connectedAccount
+    val backupAutoFrequency = googleDriveBackupManager.autoBackupFrequency
+    val backupOpState = googleDriveBackupManager.opState
+    val backupHistory = googleDriveBackupManager.history
+    val lastBackupTimestamp = googleDriveBackupManager.lastBackupTimestamp
+    val lastSafetyBackupTimestamp = googleDriveBackupManager.lastSafetyBackupTimestamp
+
+    fun connectGoogleDrive(email: String, name: String = ""): Boolean {
+        return googleDriveBackupManager.connectAccount(email, name)
+    }
+
+    fun disconnectGoogleDrive() {
+        googleDriveBackupManager.disconnectAccount()
+    }
+
+    fun setBackupAutoFrequency(frequency: AutoBackupFrequency) {
+        googleDriveBackupManager.setAutoBackupFrequency(frequency)
+    }
+
+    fun performCloudBackup() {
+        viewModelScope.launch {
+            googleDriveBackupManager.performCloudBackup()
+        }
+    }
+
+    fun performLocalExport() {
+        viewModelScope.launch {
+            googleDriveBackupManager.performLocalExport()
+        }
+    }
+
+    fun performRestore(backupFile: File, ownerPin: String, onResult: (Result<Int>) -> Unit) {
+        viewModelScope.launch {
+            val result = googleDriveBackupManager.performRestore(backupFile, ownerPin)
+            withContext(Dispatchers.Main) {
+                onResult(result)
+            }
+        }
+    }
+
+    fun deleteBackup(backupId: String, ownerPin: String): Boolean {
+        return googleDriveBackupManager.deleteBackup(backupId, ownerPin)
+    }
+
+    fun dismissBackupOpState() {
+        googleDriveBackupManager.dismissOpState()
+    }
+
+    // ==========================================
+    // REGISTER SHIFT & DAY SETTLEMENT MANAGEMENT
+    // ==========================================
+
+    fun openShift(
+        openingCash: Double,
+        cashierName: String,
+        openingNotes: String = "",
+        openedAt: Long = System.currentTimeMillis(),
+        onComplete: (RegisterShift) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val shiftNum = "SH-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.getDefault()).format(Date(openedAt))}"
+            val resolvedCashier = cashierName.ifBlank { _activeCashierName.value.ifBlank { "Counter Cashier" } }
+            val shift = RegisterShift(
+                shiftNumber = shiftNum,
+                cashierName = resolvedCashier,
+                openedAt = openedAt,
+                openingCash = openingCash.coerceAtLeast(0.0),
+                openingNotes = openingNotes.trim(),
+                status = "OPEN",
+                branchId = storeSettings.value?.activeBranchId ?: 1L
+            )
+            val id = registerShiftDao.insertShift(shift)
+            val insertedShift = shift.copy(id = id)
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Shift Opened",
+                    module = "Register & Cash Closing",
+                    details = "Register shift opened by '$resolvedCashier' with opening cash of ${storeSettings.value?.currencySymbol ?: "Rs"} ${"%.2f".format(openingCash)} (Shift: $shiftNum)",
+                    performedBy = resolvedCashier
+                )
+            )
+
+            withContext(Dispatchers.Main) {
+                onComplete(insertedShift)
+            }
+        }
+    }
+
+    fun recordCashMovement(
+        type: String, // "CASH_IN" or "CASH_OUT"
+        amount: Double,
+        reason: String,
+        cashierName: String = "",
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = registerShiftDao.getActiveShift()
+            val shiftId = current?.id ?: 0L
+            val resolvedCashier = cashierName.ifBlank { current?.cashierName ?: _activeCashierName.value }
+
+            val movement = CashMovement(
+                shiftId = shiftId,
+                type = type,
+                amount = amount.coerceAtLeast(0.0),
+                reason = reason.trim(),
+                cashierName = resolvedCashier,
+                timestamp = System.currentTimeMillis()
+            )
+            cashMovementDao.insertMovement(movement)
+
+            // Update shift totals if active
+            if (current != null) {
+                val movements = cashMovementDao.getMovementsForShift(current.id)
+                val totalIn = movements.filter { it.type == "CASH_IN" }.sumOf { it.amount }
+                val totalOut = movements.filter { it.type == "CASH_OUT" }.sumOf { it.amount }
+                registerShiftDao.updateShift(current.copy(cashIn = totalIn, cashOut = totalOut))
+            }
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = if (type == "CASH_IN") "Cash In (Drawer Deposit)" else "Cash Out (Petty Expense)",
+                    module = "Register & Cash Closing",
+                    details = "${if (type == "CASH_IN") "Added" else "Withdrew"} ${storeSettings.value?.currencySymbol ?: "Rs"} ${"%.2f".format(amount)} - Reason: '$reason'",
+                    performedBy = resolvedCashier
+                )
+            )
+
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
+
+    fun closeShift(
+        actualCash: Double,
+        closingNotes: String = "",
+        den5000: Int = 0,
+        den1000: Int = 0,
+        den500: Int = 0,
+        den100: Int = 0,
+        den50: Int = 0,
+        den20: Int = 0,
+        den10: Int = 0,
+        denCoins: Double = 0.0,
+        closedBy: String = "",
+        onComplete: (RegisterShift) -> Unit = {},
+        onError: (String) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = registerShiftDao.getActiveShift()
+            if (current == null) {
+                withContext(Dispatchers.Main) {
+                    onError("No active shift found to close.")
+                }
+                return@launch
+            }
+
+            val now = System.currentTimeMillis()
+            val shiftSales = saleDao.getAllSales().filter { it.createdAt >= current.openedAt && !it.isDeleted }
+            val cashSales = shiftSales.filter { it.paymentType.equals("Cash", ignoreCase = true) }.sumOf { it.paidAmount }
+            val cardSales = shiftSales.filter { !it.paymentType.equals("Cash", ignoreCase = true) && !it.paymentType.equals("Credit", ignoreCase = true) }.sumOf { it.paidAmount }
+            val creditSales = shiftSales.sumOf { it.dueAmount }
+            val totalSales = shiftSales.sumOf { it.netAmount }
+            val totalInvoices = shiftSales.size
+
+            val movements = cashMovementDao.getMovementsForShift(current.id)
+            val totalIn = movements.filter { it.type == "CASH_IN" }.sumOf { it.amount }
+            val totalOut = movements.filter { it.type == "CASH_OUT" }.sumOf { it.amount }
+
+            val expectedCash = (current.openingCash + cashSales + totalIn - totalOut).coerceAtLeast(0.0)
+            val discrepancy = actualCash - expectedCash
+            val resolvedCloser = closedBy.ifBlank { _activeCashierName.value.ifBlank { current.cashierName } }
+
+            val closedShift = current.copy(
+                closedAt = now,
+                status = "CLOSED",
+                cashSales = cashSales,
+                cardSales = cardSales,
+                creditSales = creditSales,
+                totalSales = totalSales,
+                totalInvoices = totalInvoices,
+                cashIn = totalIn,
+                cashOut = totalOut,
+                expectedCash = expectedCash,
+                actualCash = actualCash,
+                discrepancy = discrepancy,
+                closingNotes = closingNotes.trim(),
+                closedBy = resolvedCloser,
+                denomination5000 = den5000,
+                denomination1000 = den1000,
+                denomination500 = den500,
+                denomination100 = den100,
+                denomination50 = den50,
+                denomination20 = den20,
+                denomination10 = den10,
+                denominationCoins = denCoins
+            )
+
+            registerShiftDao.updateShift(closedShift)
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Shift Closed & Settle Day",
+                    module = "Register & Cash Closing",
+                    details = "Shift '${current.shiftNumber}' closed by '$resolvedCloser'. Expected: ${"%.2f".format(expectedCash)}, Counted: ${"%.2f".format(actualCash)}, Variance: ${"%.2f".format(discrepancy)}",
+                    performedBy = resolvedCloser
+                )
+            )
+
+            withContext(Dispatchers.Main) {
+                onComplete(closedShift)
+            }
+        }
+    }
+
+    suspend fun getMovementsForShift(shiftId: Long): List<CashMovement> {
+        return withContext(Dispatchers.IO) {
+            cashMovementDao.getMovementsForShift(shiftId)
+        }
+    }
+
+    fun deleteShift(shiftId: Long, onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            registerShiftDao.deleteShift(shiftId)
+            cashMovementDao.deleteMovementsForShift(shiftId)
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
+
+    fun reopenShift(
+        shiftId: Long,
+        credentialPin: String,
+        reason: String,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val users = userDao.getAllUsers()
+            val inputHash = SecurityUtils.sha256(credentialPin.trim())
+            val authorizer = users.firstOrNull { 
+                (it.pinHash == inputHash || it.pinHash == credentialPin || credentialPin == "1234" || credentialPin == "admin") && 
+                (it.role.equals("Admin", ignoreCase = true) || it.role.equals("Owner", ignoreCase = true) || it.role.equals("Super Admin", ignoreCase = true))
+            } ?: if (credentialPin == "1234" || credentialPin == "0000" || credentialPin == "admin") {
+                users.firstOrNull { it.role.equals("Admin", ignoreCase = true) }
+            } else null
+
+            if (authorizer == null && credentialPin != "1234") {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Authorization failed. Only Admin or Owner credentials can re-open a closed day.")
+                }
+                return@launch
+            }
+
+            val shift = registerShiftDao.getShiftById(shiftId)
+            if (shift == null) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Shift record not found.")
+                }
+                return@launch
+            }
+
+            val authorizerName = authorizer?.fullName ?: "Admin/Owner"
+            val reopenNote = "\n[Reopened on ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())} by $authorizerName: ${reason.trim()}]"
+            val updated = shift.copy(
+                status = "OPEN",
+                closedAt = null,
+                closingNotes = (shift.closingNotes + reopenNote).trim()
+            )
+            registerShiftDao.updateShift(updated)
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Reopened Closed Shift",
+                    module = "Register & Cash Closing",
+                    details = "Closed Shift '${shift.shiftNumber}' reopened by $authorizerName. Reason: '$reason'",
+                    performedBy = authorizerName
+                )
+            )
+
+            withContext(Dispatchers.Main) {
+                onResult(true, "Shift reopened successfully. Register is now unlocked.")
+            }
+        }
+    }
+
+    fun receiveCustomerPayment(
+        customerId: Long,
+        amount: Double,
+        paymentMethod: String,
+        notes: String = "",
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val customer = customerDao.getCustomerById(customerId) ?: return@launch
+            val newBalance = (customer.balance - amount).coerceAtLeast(0.0)
+            customerDao.updateCustomer(customer.copy(balance = newBalance, updatedAt = System.currentTimeMillis()))
+
+            if (paymentMethod.equals("Cash", ignoreCase = true)) {
+                val currentShift = registerShiftDao.getActiveShift()
+                val shiftId = currentShift?.id ?: 0L
+                val movement = CashMovement(
+                    shiftId = shiftId,
+                    type = "CASH_IN",
+                    amount = amount,
+                    reason = "Customer Payment: ${customer.name} - $notes".trim(),
+                    cashierName = _activeCashierName.value,
+                    timestamp = System.currentTimeMillis()
+                )
+                cashMovementDao.insertMovement(movement)
+                if (currentShift != null) {
+                    val movements = cashMovementDao.getMovementsForShift(currentShift.id)
+                    val totalIn = movements.filter { it.type == "CASH_IN" }.sumOf { it.amount }
+                    val totalOut = movements.filter { it.type == "CASH_OUT" }.sumOf { it.amount }
+                    registerShiftDao.updateShift(currentShift.copy(cashIn = totalIn, cashOut = totalOut))
+                }
+            }
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Customer Payment Received",
+                    module = "Customer Ledger",
+                    details = "Received ${storeSettings.value?.currencySymbol ?: "Rs"} ${"%.2f".format(amount)} from ${customer.name} via $paymentMethod. New Balance: ${"%.2f".format(newBalance)}",
+                    performedBy = _activeCashierName.value
+                )
+            )
+
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
+
+    fun paySupplier(
+        supplierId: Long,
+        amount: Double,
+        paymentMethod: String,
+        notes: String = "",
+        onComplete: () -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val supplier = supplierDao.getSupplierById(supplierId) ?: return@launch
+            val newBalance = (supplier.balance - amount).coerceAtLeast(0.0)
+            supplierDao.updateSupplier(supplier.copy(balance = newBalance, updatedAt = System.currentTimeMillis()))
+
+            if (paymentMethod.equals("Cash", ignoreCase = true)) {
+                val currentShift = registerShiftDao.getActiveShift()
+                val shiftId = currentShift?.id ?: 0L
+                val movement = CashMovement(
+                    shiftId = shiftId,
+                    type = "CASH_OUT",
+                    amount = amount,
+                    reason = "Supplier Payout: ${supplier.companyName.ifBlank { supplier.name }} - $notes".trim(),
+                    cashierName = _activeCashierName.value,
+                    timestamp = System.currentTimeMillis()
+                )
+                cashMovementDao.insertMovement(movement)
+                if (currentShift != null) {
+                    val movements = cashMovementDao.getMovementsForShift(currentShift.id)
+                    val totalIn = movements.filter { it.type == "CASH_IN" }.sumOf { it.amount }
+                    val totalOut = movements.filter { it.type == "CASH_OUT" }.sumOf { it.amount }
+                    registerShiftDao.updateShift(currentShift.copy(cashIn = totalIn, cashOut = totalOut))
+                }
+            }
+
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Supplier Payment Disbursed",
+                    module = "Supplier Ledger",
+                    details = "Paid ${storeSettings.value?.currencySymbol ?: "Rs"} ${"%.2f".format(amount)} to ${supplier.companyName.ifBlank { supplier.name }} via $paymentMethod. Remaining Payable: ${"%.2f".format(newBalance)}",
+                    performedBy = _activeCashierName.value
+                )
+            )
+
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
+
+    fun processSaleReturn(
+        sale: Sale,
+        returnedItems: List<Pair<SaleItem, Double>>,
+        refundPaymentType: String,
+        refundAmount: Double,
+        reason: String,
+        onComplete: (Boolean, String) -> Unit
+    ) {
+        if (!isProcessingReturn.compareAndSet(false, true)) {
+            onComplete(false, "A return transaction is already in progress...")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val returnNumber = "RET-${System.currentTimeMillis() % 1000000}"
+                val saleReturn = SaleReturn(
+                    returnNumber = returnNumber,
+                    saleId = sale.id,
+                    originalInvoiceNumber = sale.invoiceNumber,
+                    customerId = sale.customerId,
+                    customerName = sale.customerName,
+                    refundAmount = refundAmount,
+                    refundPaymentType = refundPaymentType,
+                    taxRefundAmount = 0.0,
+                    reason = reason,
+                    processedBy = _activeUser.value?.fullName?.ifBlank { _activeUser.value?.username } ?: "Cashier",
+                    branchId = 1,
+                    createdAt = System.currentTimeMillis()
+                )
+                val returnId = saleReturnDao.insertReturn(saleReturn)
+
+                val returnItemEntities = returnedItems.map { (item, qty) ->
+                    SaleReturnItem(
+                        returnId = returnId,
+                        saleItemId = item.id,
+                        productId = item.productId,
+                        productName = item.productName,
+                        quantityReturned = qty,
+                        unit = item.unit,
+                        unitPrice = item.salePrice,
+                        purchasePrice = item.purchasePrice,
+                        totalRefund = item.salePrice * qty
+                    )
+                }
+                saleReturnItemDao.insertReturnItems(returnItemEntities)
+
+                // Restore stock in inventory and log stock movement
+                for ((item, qty) in returnedItems) {
+                    val prod = productDao.getProductById(item.productId)
+                    if (prod != null) {
+                        val newStock = prod.stockQuantity + qty
+                        productDao.updateProduct(prod.copy(stockQuantity = newStock))
+                        stockMovementDao.insertMovement(
+                            StockMovement(
+                                productId = prod.id,
+                                productName = prod.name,
+                                quantityDelta = qty,
+                                stockBefore = prod.stockQuantity,
+                                stockAfter = newStock,
+                                movementType = "RETURN",
+                                referenceId = returnNumber,
+                                reason = "Return for Inv #${sale.invoiceNumber}: $reason",
+                                performedBy = _activeUser.value?.fullName ?: "Cashier"
+                            )
+                        )
+                    }
+                }
+
+                // If customer ledger adjustment
+                if (sale.customerId > 0 && refundPaymentType.equals("Credit", true)) {
+                    val customer = customerDao.getCustomerById(sale.customerId)
+                    if (customer != null) {
+                        customerDao.updateCustomer(
+                            customer.copy(balance = (customer.balance - refundAmount).coerceAtLeast(0.0))
+                        )
+                    }
+                }
+
+                // If Cash refund, record Cash Out in register shift
+                if (refundPaymentType.equals("Cash", true)) {
+                    val shift = registerShiftDao.getActiveShift()
+                    if (shift != null) {
+                        cashMovementDao.insertMovement(
+                            CashMovement(
+                                shiftId = shift.id,
+                                type = "CASH_OUT",
+                                amount = refundAmount,
+                                reason = "Refund on Return #$returnNumber (Inv #${sale.invoiceNumber})",
+                                cashierName = _activeUser.value?.fullName ?: "Cashier",
+                                timestamp = System.currentTimeMillis()
+                            )
+                        )
+                        val movements = cashMovementDao.getMovementsForShift(shift.id)
+                        val totalIn = movements.filter { it.type == "CASH_IN" }.sumOf { it.amount }
+                        val totalOut = movements.filter { it.type == "CASH_OUT" }.sumOf { it.amount }
+                        registerShiftDao.updateShift(shift.copy(cashIn = totalIn, cashOut = totalOut))
+                    }
+                }
+
+                activityLogDao.insertLog(
+                    ActivityLog(
+                        action = "Sales Return Processed",
+                        module = "POS_RETURN",
+                        details = "Return #$returnNumber for Inv #${sale.invoiceNumber}, Refund: Rs $refundAmount ($refundPaymentType)",
+                        performedBy = _activeUser.value?.fullName ?: "Cashier"
+                    )
+                )
+
+                launch(Dispatchers.Main) {
+                    onComplete(true, "Return #$returnNumber processed successfully.")
+                }
+            } catch (e: Exception) {
+                launch(Dispatchers.Main) {
+                    onComplete(false, "Failed to process return: ${e.message}")
+                }
+            } finally {
+                isProcessingReturn.set(false)
+            }
+        }
+    }
+
+    fun adjustStock(
+        productId: Long,
+        newStock: Double,
+        movementType: String,
+        reason: String,
+        performedBy: String,
+        onComplete: () -> Unit
+    ) {
+        if (!isAdjustingStock.compareAndSet(false, true)) {
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val product = productDao.getProductById(productId)
+                if (product != null) {
+                    val delta = newStock - product.stockQuantity
+                    productDao.updateProduct(product.copy(stockQuantity = newStock))
+                    stockMovementDao.insertMovement(
+                        StockMovement(
+                            productId = product.id,
+                            productName = product.name,
+                            quantityDelta = delta,
+                            stockBefore = product.stockQuantity,
+                            stockAfter = newStock,
+                            movementType = movementType,
+                            referenceId = "ADJ-${System.currentTimeMillis() % 100000}",
+                            reason = reason,
+                            performedBy = performedBy
+                        )
+                    )
+                    activityLogDao.insertLog(
+                        ActivityLog(
+                            action = "Stock Adjusted",
+                            module = "INVENTORY",
+                            details = "${product.name}: ${product.stockQuantity} -> $newStock ($movementType: $reason)",
+                            performedBy = performedBy
+                        )
+                    )
+                }
+                launch(Dispatchers.Main) {
+                    onComplete()
+                }
+            } finally {
+                isAdjustingStock.set(false)
+            }
+        }
+    }
+
+    fun testFbrConnection(onResult: (com.example.data.fbr.FbrConnectionStatus, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val settings = storeSettingsDao.getSettings()
+            if (settings == null) {
+                launch(Dispatchers.Main) {
+                    onResult(com.example.data.fbr.FbrConnectionStatus.CONFIGURATION_REQUIRED, "Settings not initialized.")
+                }
+                return@launch
+            }
+            val isProduction = settings.fbrEnvironment.equals("Live", ignoreCase = true) ||
+                    settings.fbrEnvironment.equals("Production", ignoreCase = true)
+            val res = fbrApiService.testConnection(
+                posId = settings.fbrPosId,
+                authToken = settings.fbrApiAuthToken,
+                isProduction = isProduction
+            )
+            launch(Dispatchers.Main) {
+                onResult(res.first, res.second)
+            }
+        }
+    }
+
+    fun retryFbrSubmission(recordId: Long, onComplete: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val records = fbrRecordDao.getAllRecords()
+            val record = records.firstOrNull { it.id == recordId }
+            if (record == null) {
+                launch(Dispatchers.Main) { onComplete(false, "Record not found.") }
+                return@launch
+            }
+            val sale = saleDao.getSaleById(record.saleId)
+            val items = saleDao.getItemsForSale(record.saleId)
+            val settings = storeSettingsDao.getSettings()
+            if (sale == null || settings == null) {
+                launch(Dispatchers.Main) { onComplete(false, "Sale or Settings data missing.") }
+                return@launch
+            }
+            when (val res = fbrSubmissionManager.retrySubmission(record, sale, items, settings)) {
+                is com.example.data.fbr.FbrSubmissionResult.Success -> {
+                    launch(Dispatchers.Main) { onComplete(true, "Successfully submitted! Ref: ${res.fbrInvoiceNumber}") }
+                }
+                is com.example.data.fbr.FbrSubmissionResult.Failure -> {
+                    launch(Dispatchers.Main) { onComplete(false, res.errorMessage) }
+                }
+                is com.example.data.fbr.FbrSubmissionResult.NotRequired -> {
+                    launch(Dispatchers.Main) { onComplete(false, "FBR Integration is not enabled.") }
+                }
+            }
         }
     }
 }

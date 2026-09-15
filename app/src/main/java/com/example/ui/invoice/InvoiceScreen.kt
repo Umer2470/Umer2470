@@ -60,6 +60,7 @@ fun InvoiceScreen(
     var selectedFilter by remember { mutableStateOf(InvoiceFilter.ALL) }
     var selectedSaleForReceipt by remember { mutableStateOf<Pair<Sale, List<SaleItem>>?>(null) }
     var selectedSaleForEdit by remember { mutableStateOf<Pair<Sale, List<SaleItem>>?>(null) }
+    var selectedSaleForReturn by remember { mutableStateOf<Pair<Sale, List<SaleItem>>?>(null) }
     var selectedSaleForDelete by remember { mutableStateOf<Sale?>(null) }
     var printingSaleId by remember { mutableStateOf<Long?>(null) }
     val scope = rememberCoroutineScope()
@@ -77,9 +78,38 @@ fun InvoiceScreen(
                 selectedSaleForReceipt = null
                 selectedSaleForEdit = Pair(s, items)
             },
+            onReturnRequest = { s ->
+                selectedSaleForReceipt = null
+                selectedSaleForReturn = Pair(s, items)
+            },
             onDeleteRequest = { s ->
                 selectedSaleForReceipt = null
                 selectedSaleForDelete = s
+            }
+        )
+    }
+
+    // Return Invoice Dialog
+    if (selectedSaleForReturn != null) {
+        val (sale, items) = selectedSaleForReturn!!
+        ReturnInvoiceDialog(
+            sale = sale,
+            items = items,
+            currency = currency,
+            onDismiss = { selectedSaleForReturn = null },
+            onConfirmReturn = { returnedItems, refundMode, refundAmount, reason ->
+                viewModel.processSaleReturn(
+                    sale = sale,
+                    returnedItems = returnedItems,
+                    refundPaymentType = refundMode,
+                    refundAmount = refundAmount,
+                    reason = reason
+                ) { success, msg ->
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                    if (success) {
+                        selectedSaleForReturn = null
+                    }
+                }
             }
         )
     }
@@ -567,7 +597,29 @@ fun InvoiceScreen(
                                             )
                                         }
 
-                                        // 4. Quick Edit Button
+                                        // 4. Quick Return Button
+                                        IconButton(
+                                            onClick = {
+                                                scope.launch {
+                                                    val (s, items) = viewModel.getSaleDetails(sale.id)
+                                                    if (s != null) {
+                                                        selectedSaleForReturn = Pair(s, items)
+                                                    }
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .testTag("return_invoice_${sale.id}")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.KeyboardReturn,
+                                                contentDescription = "Return / Exchange",
+                                                tint = Amber600,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        // 5. Quick Edit Button
                                         IconButton(
                                             onClick = {
                                                 scope.launch {
@@ -589,7 +641,7 @@ fun InvoiceScreen(
                                             )
                                         }
 
-                                        // 5. Quick Delete Button
+                                        // 6. Quick Delete Button
                                         IconButton(
                                             onClick = {
                                                 selectedSaleForDelete = sale

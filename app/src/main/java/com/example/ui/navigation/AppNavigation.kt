@@ -54,6 +54,7 @@ sealed class Screen(val route: String) {
     object Logs : Screen("logs")
     object Settings : Screen("settings")
     object DeveloperHub : Screen("developer_hub")
+    object BackupRecovery : Screen("backup_recovery")
 }
 
 @Composable
@@ -556,6 +557,12 @@ fun AppNavigation(
                 }
                 composable(Screen.DeveloperHub.route) {
                     DeveloperControlHubScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.BackupRecovery.route) {
+                    BackupRecoveryScreen(
                         viewModel = viewModel,
                         onNavigateBack = { navController.popBackStack() }
                     )

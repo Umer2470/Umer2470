@@ -79,7 +79,6 @@ fun DeveloperControlHubScreen(
     var setupDevConfirmPin by remember { mutableStateOf("") }
     var setupDevError by remember { mutableStateOf<String?>(null) }
     var isSetupPinVisible by remember { mutableStateOf(false) }
-    var switchToKeyLogin by remember { mutableStateOf(false) }
 
     // Active Tab
     var selectedTab by remember { mutableStateOf(DevPlatformTab.APPS) }
@@ -187,7 +186,7 @@ fun DeveloperControlHubScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center
                 ) {
-                    if (!isOwnerConfigured && !switchToKeyLogin) {
+                    if (!isOwnerConfigured) {
                         // FIRST-TIME OWNER / DEVELOPER SECURITY SETUP FLOW
                         Card(
                             modifier = Modifier
@@ -233,41 +232,6 @@ fun DeveloperControlHubScreen(
                                     color = Navy500,
                                     textAlign = TextAlign.Center
                                 )
-
-                                // Cryptographic Security Key preview
-                                val devSecurityKey = remember { viewModel.getOwnerSecurityKey() }
-                                Surface(
-                                    color = Slate50,
-                                    shape = RoundedCornerShape(10.dp),
-                                    border = ButtonDefaults.outlinedButtonBorder,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text("Cryptographic Owner Key (Master Fallback):", fontSize = 10.sp, color = Gold700, fontWeight = FontWeight.Bold)
-                                            Text(
-                                                text = devSecurityKey,
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 12.sp,
-                                                color = Navy900
-                                            )
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                clipboardManager.setPrimaryClip(ClipData.newPlainText("Owner Key", devSecurityKey))
-                                                toastMessage = "Owner Security Key copied to clipboard!"
-                                            },
-                                            modifier = Modifier.testTag("btn_copy_dev_setup_key")
-                                        ) {
-                                            Icon(Icons.Default.ContentCopy, contentDescription = "Copy", tint = Navy800, modifier = Modifier.size(16.dp))
-                                        }
-                                    }
-                                }
 
                                 OutlinedTextField(
                                     value = setupDevPin,
@@ -357,13 +321,6 @@ fun DeveloperControlHubScreen(
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("Save Credential & Access Hub", fontWeight = FontWeight.Bold)
                                 }
-
-                                TextButton(
-                                    onClick = { switchToKeyLogin = true },
-                                    modifier = Modifier.testTag("btn_dev_switch_to_key_login")
-                                ) {
-                                    Text("Have an Owner Security Key? Enter Key Instead", fontSize = 12.sp, color = Navy700)
-                                }
                             }
                         }
                     } else {
@@ -407,7 +364,7 @@ fun DeveloperControlHubScreen(
                                 )
 
                                 Text(
-                                    text = "Enter Dedicated Owner Security Password/PIN or Owner Security Key to access Developer Control Hub.",
+                                    text = "Enter your Dedicated Owner Security PIN to access Developer Control Hub.",
                                     fontSize = 12.sp,
                                     color = Navy500,
                                     textAlign = TextAlign.Center
@@ -419,8 +376,8 @@ fun DeveloperControlHubScreen(
                                         enteredMasterKey = it
                                         masterKeyError = null
                                     },
-                                    label = { Text("Owner Password/PIN or Security Key") },
-                                    placeholder = { Text("Enter Owner PIN or Owner Security Key") },
+                                    label = { Text("Owner Security PIN / Password") },
+                                    placeholder = { Text("Enter Private Owner PIN") },
                                     visualTransformation = if (isMasterKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                     trailingIcon = {
                                         IconButton(onClick = { isMasterKeyVisible = !isMasterKeyVisible }) {
@@ -436,7 +393,7 @@ fun DeveloperControlHubScreen(
                                         if (masterKeyError != null) {
                                             Text(masterKeyError!!, color = Rose600)
                                         } else {
-                                            Text("Dedicated Owner Credential Only (Cashier & Staff PINs not accepted)", fontSize = 11.sp, color = Navy400)
+                                            Text("Dedicated Owner PIN Only (Staff PINs & Owner Key are not accepted)", fontSize = 11.sp, color = Navy400)
                                         }
                                     },
                                     shape = RoundedCornerShape(10.dp),
@@ -448,12 +405,14 @@ fun DeveloperControlHubScreen(
                                 Button(
                                     onClick = {
                                         val clean = enteredMasterKey.trim()
-                                        if (viewModel.verifyDeveloperAuth(clean)) {
+                                        if (clean.startsWith("OWNER-KEY-", ignoreCase = true) || clean == viewModel.getOwnerSecurityKey()) {
+                                            masterKeyError = "Owner Key cannot be used as password. Enter your Owner PIN."
+                                        } else if (viewModel.verifyDeveloperAuth(clean)) {
                                             isDeveloperAuthenticated = true
                                             enteredMasterKey = ""
                                             masterKeyError = null
                                         } else {
-                                            masterKeyError = "Invalid Owner Security Credential. Access Denied."
+                                            masterKeyError = "Invalid Owner Security PIN. Access Denied."
                                         }
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Navy900),
@@ -466,14 +425,6 @@ fun DeveloperControlHubScreen(
                                     Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text("Verify & Access Developer Hub", fontWeight = FontWeight.Bold)
-                                }
-
-                                if (!isOwnerConfigured && switchToKeyLogin) {
-                                    TextButton(
-                                        onClick = { switchToKeyLogin = false }
-                                    ) {
-                                        Text("Back to First-Time Setup", fontSize = 12.sp, color = Navy700)
-                                    }
                                 }
 
                                 Surface(

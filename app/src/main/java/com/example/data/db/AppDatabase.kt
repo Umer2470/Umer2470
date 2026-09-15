@@ -28,9 +28,15 @@ import kotlinx.coroutines.launch
         AttendanceRecord::class,
         BusinessProfile::class,
         ActivityLog::class,
-        PaymentQrConfig::class
+        PaymentQrConfig::class,
+        RegisterShift::class,
+        CashMovement::class,
+        SaleReturn::class,
+        SaleReturnItem::class,
+        StockMovement::class,
+        FbrInvoiceRecord::class
     ],
-    version = 3,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -46,6 +52,12 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun businessProfileDao(): BusinessProfileDao
     abstract fun activityLogDao(): ActivityLogDao
     abstract fun paymentQrConfigDao(): PaymentQrConfigDao
+    abstract fun registerShiftDao(): RegisterShiftDao
+    abstract fun cashMovementDao(): CashMovementDao
+    abstract fun saleReturnDao(): SaleReturnDao
+    abstract fun saleReturnItemDao(): SaleReturnItemDao
+    abstract fun stockMovementDao(): StockMovementDao
+    abstract fun fbrInvoiceRecordDao(): FbrInvoiceRecordDao
 
     companion object {
         @Volatile
@@ -84,6 +96,148 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `register_shifts` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `shiftNumber` TEXT NOT NULL,
+                        `cashierName` TEXT NOT NULL,
+                        `openedAt` INTEGER NOT NULL,
+                        `closedAt` INTEGER,
+                        `openingCash` REAL NOT NULL,
+                        `openingNotes` TEXT NOT NULL,
+                        `status` TEXT NOT NULL,
+                        `cashSales` REAL NOT NULL,
+                        `cardSales` REAL NOT NULL,
+                        `creditSales` REAL NOT NULL,
+                        `totalSales` REAL NOT NULL,
+                        `cashIn` REAL NOT NULL,
+                        `cashOut` REAL NOT NULL,
+                        `expectedCash` REAL NOT NULL,
+                        `actualCash` REAL NOT NULL,
+                        `discrepancy` REAL NOT NULL,
+                        `closingNotes` TEXT NOT NULL,
+                        `totalInvoices` INTEGER NOT NULL,
+                        `branchId` INTEGER NOT NULL,
+                        `denomination5000` INTEGER NOT NULL,
+                        `denomination1000` INTEGER NOT NULL,
+                        `denomination500` INTEGER NOT NULL,
+                        `denomination100` INTEGER NOT NULL,
+                        `denomination50` INTEGER NOT NULL,
+                        `denomination20` INTEGER NOT NULL,
+                        `denomination10` INTEGER NOT NULL,
+                        `denominationCoins` REAL NOT NULL,
+                        `closedBy` TEXT NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `cash_movements` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `shiftId` INTEGER NOT NULL,
+                        `type` TEXT NOT NULL,
+                        `amount` REAL NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `cashierName` TEXT NOT NULL,
+                        `timestamp` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `sale_returns` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `returnNumber` TEXT NOT NULL,
+                        `saleId` INTEGER NOT NULL,
+                        `originalInvoiceNumber` TEXT NOT NULL,
+                        `customerId` INTEGER NOT NULL,
+                        `customerName` TEXT NOT NULL,
+                        `refundAmount` REAL NOT NULL,
+                        `refundPaymentType` TEXT NOT NULL,
+                        `taxRefundAmount` REAL NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `processedBy` TEXT NOT NULL,
+                        `branchId` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `sale_return_items` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `returnId` INTEGER NOT NULL,
+                        `saleItemId` INTEGER NOT NULL,
+                        `productId` INTEGER NOT NULL,
+                        `productName` TEXT NOT NULL,
+                        `quantityReturned` REAL NOT NULL,
+                        `unit` TEXT NOT NULL,
+                        `unitPrice` REAL NOT NULL,
+                        `purchasePrice` REAL NOT NULL,
+                        `totalRefund` REAL NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `stock_movements` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `productId` INTEGER NOT NULL,
+                        `productName` TEXT NOT NULL,
+                        `quantityDelta` REAL NOT NULL,
+                        `stockBefore` REAL NOT NULL,
+                        `stockAfter` REAL NOT NULL,
+                        `movementType` TEXT NOT NULL,
+                        `referenceId` TEXT NOT NULL,
+                        `reason` TEXT NOT NULL,
+                        `performedBy` TEXT NOT NULL,
+                        `branchId` INTEGER NOT NULL,
+                        `timestamp` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `fbr_invoice_records` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `saleId` INTEGER NOT NULL,
+                        `invoiceNumber` TEXT NOT NULL,
+                        `usin` TEXT NOT NULL,
+                        `posId` TEXT NOT NULL,
+                        `ntn` TEXT NOT NULL,
+                        `strn` TEXT NOT NULL,
+                        `totalTaxableAmount` REAL NOT NULL,
+                        `totalTaxAmount` REAL NOT NULL,
+                        `invoiceGrandTotal` REAL NOT NULL,
+                        `submissionStatus` TEXT NOT NULL,
+                        `fbrInvoiceNumber` TEXT NOT NULL,
+                        `qrCodeData` TEXT NOT NULL,
+                        `responseCode` TEXT NOT NULL,
+                        `responseMessage` TEXT NOT NULL,
+                        `submittedAt` INTEGER,
+                        `retryCount` INTEGER NOT NULL,
+                        `createdAt` INTEGER NOT NULL
+                    )
+                """.trimIndent())
+
+                // StoreSettings FBR updates
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN isFbrIntegrationEnabled INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrPosId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrNtn TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrStrn TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrBusinessName TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrEnvironment TEXT NOT NULL DEFAULT 'Sandbox'")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrApiAuthToken TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrDefaultTaxRate REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN fbrTaxMode TEXT NOT NULL DEFAULT 'Exclusive'")
+
+                // Product expiry, batch, multi-unit, and tax updates
+                db.execSQL("ALTER TABLE products ADD COLUMN expiryDate INTEGER DEFAULT NULL")
+                db.execSQL("ALTER TABLE products ADD COLUMN batchNumber TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE products ADD COLUMN secondaryUnit TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE products ADD COLUMN unitConversionRate REAL NOT NULL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE products ADD COLUMN isTaxExempt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE products ADD COLUMN customTaxRate REAL NOT NULL DEFAULT 0.0")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -91,7 +245,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "sentry_store_pos_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(false)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {

@@ -31,7 +31,16 @@ data class StoreSettings(
     val paperWidthMm: Int = 80, // 58mm or 80mm
     val isScanToPayEnabled: Boolean = false,
     val scanToPayLabel: String = "SCAN TO PAY",
-    val activePaymentQrId: Long? = null
+    val activePaymentQrId: Long? = null,
+    val isFbrIntegrationEnabled: Boolean = false,
+    val fbrPosId: String = "",
+    val fbrNtn: String = "",
+    val fbrStrn: String = "",
+    val fbrBusinessName: String = "",
+    val fbrEnvironment: String = "Sandbox", // Sandbox or Live
+    val fbrApiAuthToken: String = "",
+    val fbrDefaultTaxRate: Double = 0.0,
+    val fbrTaxMode: String = "Exclusive" // Exclusive or Inclusive
 )
 
 @JsonClass(generateAdapter = true)
