@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,8 +19,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -30,6 +33,14 @@ import com.example.ui.components.AppHeader
 import com.example.ui.components.StatusBadge
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
+import com.example.util.BarcodeGenerator
+import com.example.util.BarcodeLabelPdfGenerator
+import com.example.util.BarcodeType
+import com.example.util.LabelPrintOptions
+import com.example.util.ProductLabelItem
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -59,6 +70,7 @@ fun InventoryScreen(
     var showAddEditDialog by remember { mutableStateOf(false) }
     var editingProduct by remember { mutableStateOf<Product?>(null) }
     var adjustingProduct by remember { mutableStateOf<Product?>(null) }
+    var recentlySavedProduct by remember { mutableStateOf<Product?>(null) }
 
     val filteredProducts = remember(products, searchQuery) {
         if (searchQuery.isBlank()) products
@@ -87,6 +99,7 @@ fun InventoryScreen(
         var name by remember { mutableStateOf(editingProduct?.name ?: "") }
         var category by remember { mutableStateOf(editingProduct?.category ?: "General") }
         var barcode by remember { mutableStateOf(editingProduct?.barcode ?: "") }
+        var isCustomBarcode by remember { mutableStateOf(editingProduct?.barcode?.isNotBlank() == true) }
         var purchasePrice by remember { mutableStateOf(editingProduct?.purchasePrice?.toString() ?: "") }
         var salePrice by remember { mutableStateOf(editingProduct?.salePrice?.toString() ?: "") }
         var stockQuantity by remember { mutableStateOf(editingProduct?.stockQuantity?.toString() ?: "") }
@@ -105,13 +118,40 @@ fun InventoryScreen(
         var isTaxExempt by remember { mutableStateOf(editingProduct?.isTaxExempt ?: false) }
         var customTaxRate by remember { mutableStateOf(editingProduct?.customTaxRate?.toString() ?: "0.0") }
 
+        val isEditMode = editingProduct != null
+
+        // Render preview of existing barcode if editing an existing product
+        val existingBarcodeBitmap = remember(editingProduct?.barcode) {
+            val code = editingProduct?.barcode?.trim()
+            if (!code.isNullOrBlank()) {
+                try {
+                    BarcodeGenerator.generateBarcodeBitmap(
+                        content = code,
+                        type = BarcodeGenerator.detectBarcodeType(code),
+                        width = 400,
+                        height = 100
+                    )
+                } catch (_: Exception) { null }
+            } else null
+        }
+
         AlertDialog(
             onDismissRequest = { showAddEditDialog = false },
             title = {
-                Text(
-                    text = if (editingProduct == null) "Add New Product" else "Edit Product",
-                    fontWeight = FontWeight.Bold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isEditMode) Icons.Default.Edit else Icons.Default.AddBox,
+                        contentDescription = null,
+                        tint = Navy900
+                    )
+                    Text(
+                        text = if (isEditMode) "Edit Product" else "Add New Product",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             },
             text = {
                 Column(
@@ -124,6 +164,7 @@ fun InventoryScreen(
                         value = name,
                         onValueChange = { name = it },
                         label = { Text("Product Name *") },
+                        placeholder = { Text("e.g. Paint 150 ml") },
                         modifier = Modifier.fillMaxWidth().testTag("product_name_input")
                     )
 
@@ -132,28 +173,138 @@ fun InventoryScreen(
                             value = category,
                             onValueChange = { category = it },
                             label = { Text("Category") },
+                            placeholder = { Text("Paint / Grocery") },
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
-                            value = barcode,
-                            onValueChange = { barcode = it },
-                            label = { Text("Barcode / SKU") },
-                            modifier = Modifier.weight(1f).testTag("product_barcode_input")
+                            value = batchNumber,
+                            onValueChange = { batchNumber = it },
+                            label = { Text("Brand / SKU (Optional)") },
+                            placeholder = { Text("e.g. ABC / SKU-101") },
+                            modifier = Modifier.weight(1f)
                         )
+                    }
+
+                    // Barcode Section: Automatic Barcode Generation vs Permanent Barcode Association
+                    if (!isEditMode) {
+                        // ADD PRODUCT: Automatic Barcode Generation
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Blue50),
+                            border = BorderStroke(1.dp, Blue600.copy(alpha = 0.3f)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.AutoAwesome,
+                                            contentDescription = null,
+                                            tint = Blue600,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Text(
+                                            text = "Barcode: AUTO-GENERATED",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Navy900
+                                        )
+                                    }
+                                    TextButton(
+                                        onClick = { isCustomBarcode = !isCustomBarcode },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                    ) {
+                                        Text(
+                                            if (isCustomBarcode) "Use Auto" else "Custom Barcode",
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+
+                                if (isCustomBarcode) {
+                                    OutlinedTextField(
+                                        value = barcode,
+                                        onValueChange = { barcode = it },
+                                        label = { Text("Enter / Scan Custom Barcode") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth().testTag("product_barcode_input")
+                                    )
+                                } else {
+                                    Text(
+                                        text = "⚡ Barcode will be generated automatically when this product is saved.",
+                                        fontSize = 11.sp,
+                                        color = Slate600
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        // EDIT PRODUCT: Display Existing Barcode & Permanence Notice
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Slate100),
+                            border = BorderStroke(1.dp, Slate200),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Lock,
+                                        contentDescription = null,
+                                        tint = Slate600,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Barcode: ${editingProduct?.barcode?.ifBlank { "890${System.currentTimeMillis() % 1000000000}" }}",
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 13.sp,
+                                        color = Navy900
+                                    )
+                                }
+                                Text(
+                                    text = "Permanent Product Barcode: Locked to preserve sales history and POS scanning identity.",
+                                    fontSize = 10.sp,
+                                    color = Slate600
+                                )
+                                if (existingBarcodeBitmap != null) {
+                                    Image(
+                                        bitmap = existingBarcodeBitmap.asImageBitmap(),
+                                        contentDescription = "Existing barcode visual",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(50.dp)
+                                            .padding(top = 4.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = purchasePrice,
                             onValueChange = { purchasePrice = it },
-                            label = { Text("Cost Price") },
+                            label = { Text("Purchase / Cost Price") },
+                            placeholder = { Text("e.g. 700") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = salePrice,
                             onValueChange = { salePrice = it },
-                            label = { Text("Sale Price *") },
+                            label = { Text("Selling Price *") },
+                            placeholder = { Text("e.g. 850") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f).testTag("product_sale_price_input")
                         )
@@ -164,13 +315,15 @@ fun InventoryScreen(
                             value = stockQuantity,
                             onValueChange = { stockQuantity = it },
                             label = { Text("Stock Quantity") },
+                            placeholder = { Text("e.g. 20") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = unit,
                             onValueChange = { unit = it },
-                            label = { Text("Primary Unit (Pcs/Kg)") },
+                            label = { Text("Unit") },
+                            placeholder = { Text("Bottle / Pcs") },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -181,12 +334,6 @@ fun InventoryScreen(
                             onValueChange = { minStockAlert = it },
                             label = { Text("Min Stock Alert") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = batchNumber,
-                            onValueChange = { batchNumber = it },
-                            label = { Text("Batch / Lot #") },
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -244,7 +391,7 @@ fun InventoryScreen(
                             val p = (editingProduct ?: Product()).copy(
                                 name = name.trim(),
                                 category = category.trim().ifBlank { "General" },
-                                barcode = barcode.trim(),
+                                barcode = if (!isEditMode && !isCustomBarcode) "" else barcode.trim(),
                                 purchasePrice = purchasePrice.toDoubleOrNull() ?: 0.0,
                                 salePrice = salePrice.toDoubleOrNull() ?: 0.0,
                                 stockQuantity = stockQuantity.toDoubleOrNull() ?: 0.0,
@@ -257,22 +404,148 @@ fun InventoryScreen(
                                 isTaxExempt = isTaxExempt,
                                 customTaxRate = customTaxRate.toDoubleOrNull() ?: 0.0
                             )
-                            viewModel.saveProduct(p) {
+                            viewModel.saveProductWithResult(p) { saved ->
                                 showAddEditDialog = false
-                                editingProduct = null
-                                Toast.makeText(context, "Product saved successfully", Toast.LENGTH_SHORT).show()
+                                if (isEditMode) {
+                                    editingProduct = null
+                                    Toast.makeText(context, "✓ Product updated. Barcode: ${saved.barcode}", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    editingProduct = null
+                                    recentlySavedProduct = saved
+                                }
                             }
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                     modifier = Modifier.testTag("save_product_button")
                 ) {
-                    Text("Save")
+                    Text(if (isEditMode) "Save Changes" else "Save Product")
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showAddEditDialog = false }) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Success Dialog Displaying Automatically Generated Barcode Visually
+    if (recentlySavedProduct != null) {
+        val saved = recentlySavedProduct!!
+        val barcodeBitmap = remember(saved.barcode) {
+            try {
+                BarcodeGenerator.generateBarcodeBitmap(
+                    content = saved.barcode,
+                    type = BarcodeGenerator.detectBarcodeType(saved.barcode),
+                    width = 460,
+                    height = 120
+                )
+            } catch (_: Exception) { null }
+        }
+
+        AlertDialog(
+            onDismissRequest = { recentlySavedProduct = null },
+            icon = {
+                Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = null,
+                    tint = Emerald600,
+                    modifier = Modifier.size(48.dp)
+                )
+            },
+            title = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "✓ Product Saved",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Navy900
+                    )
+                    Text(
+                        text = "✓ Barcode Automatically Generated",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Emerald600
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Slate100),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = saved.name,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp,
+                                color = Navy900
+                            )
+                            Text(
+                                text = "Category: ${saved.category} • Price: $currency ${saved.salePrice}",
+                                fontSize = 12.sp,
+                                color = Slate500
+                            )
+                            if (saved.batchNumber.isNotBlank()) {
+                                Text(
+                                    text = "SKU: ${saved.batchNumber}",
+                                    fontSize = 11.sp,
+                                    color = Slate600
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            if (barcodeBitmap != null) {
+                                Image(
+                                    bitmap = barcodeBitmap.asImageBitmap(),
+                                    contentDescription = "Generated barcode image",
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(70.dp)
+                                )
+                            }
+
+                            Text(
+                                text = saved.barcode,
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                letterSpacing = 2.sp,
+                                color = Navy900
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val p = recentlySavedProduct
+                        recentlySavedProduct = null
+                        onNavigateToBarcodeLabels()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Navy900)
+                ) {
+                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Print Barcode Label")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { recentlySavedProduct = null }) {
+                    Text("Done")
                 }
             }
         )

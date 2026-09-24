@@ -247,6 +247,59 @@ object BarcodeGenerator {
     }
 
     /**
+     * Generates a 13-digit numeric barcode starting with 890 (or custom prefix)
+     * with Mod10 checksum, perfectly compatible with Code 128 and retail scanners.
+     * Verifies uniqueness against database/existing records before returning.
+     */
+    suspend fun generateUniqueNumericBarcode(
+        prefix: String = "890",
+        isBarcodeTaken: suspend (String) -> Boolean = { false }
+    ): String {
+        var candidate: String
+        var attempts = 0
+        do {
+            val randomPart = (random.nextLong().let { if (it < 0) -it else it } % 1_000_000_000L)
+                .toString().padStart(9, '0')
+            val base = "$prefix$randomPart"
+            val checksum = calculateMod10Checksum(base, weightOdd = 1, weightEven = 3)
+            candidate = "$base$checksum"
+            attempts++
+        } while (isBarcodeTaken(candidate) && attempts < 100)
+
+        if (isBarcodeTaken(candidate)) {
+            val timePart = System.currentTimeMillis().toString().takeLast(9)
+            val base = "$prefix$timePart"
+            val checksum = calculateMod10Checksum(base, weightOdd = 1, weightEven = 3)
+            candidate = "$base$checksum"
+        }
+        return candidate
+    }
+
+    fun generateUniqueNumericBarcodeSync(
+        prefix: String = "890",
+        isBarcodeTaken: (String) -> Boolean = { false }
+    ): String {
+        var candidate: String
+        var attempts = 0
+        do {
+            val randomPart = (random.nextLong().let { if (it < 0) -it else it } % 1_000_000_000L)
+                .toString().padStart(9, '0')
+            val base = "$prefix$randomPart"
+            val checksum = calculateMod10Checksum(base, weightOdd = 1, weightEven = 3)
+            candidate = "$base$checksum"
+            attempts++
+        } while (isBarcodeTaken(candidate) && attempts < 100)
+
+        if (isBarcodeTaken(candidate)) {
+            val timePart = System.currentTimeMillis().toString().takeLast(9)
+            val base = "$prefix$timePart"
+            val checksum = calculateMod10Checksum(base, weightOdd = 1, weightEven = 3)
+            candidate = "$base$checksum"
+        }
+        return candidate
+    }
+
+    /**
      * Generates a unique, valid barcode based on requested type and product ID
      */
     fun autoGenerateBarcode(

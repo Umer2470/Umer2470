@@ -15,6 +15,7 @@ import com.example.data.backup.*
 import com.example.data.db.AppDatabase
 import com.example.data.entity.*
 import com.example.data.model.UserRole
+import com.example.util.BarcodeGenerator
 import com.example.util.InvoiceNumberService
 import com.example.util.PaymentQrImageHelper
 import com.example.util.RecoveryUtils
@@ -865,31 +866,68 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Product Management
+    // Product Management with Automatic Barcode Generation & Permanent Barcode Association
     fun saveProduct(product: Product, onSuccess: () -> Unit = {}) {
+        saveProductWithResult(product) { onSuccess() }
+    }
+
+    fun saveProductWithResult(product: Product, onResult: (Product) -> Unit = {}) {
         viewModelScope.launch(Dispatchers.IO) {
-            if (product.id == 0L) {
-                productDao.insertProduct(product)
+            val finalProduct = if (product.id == 0L) {
+                // NEW PRODUCT:
+                // If barcode is blank, automatically generate a unique numeric barcode
+                val effectiveBarcode = if (product.barcode.isBlank()) {
+                    BarcodeGenerator.generateUniqueNumericBarcode("890") { candidate ->
+                        productDao.getProductByBarcode(candidate) != null
+                    }
+                } else {
+                    product.barcode.trim()
+                }
+                val toInsert = product.copy(
+                    barcode = effectiveBarcode,
+                    updatedAt = System.currentTimeMillis()
+                )
+                val newId = productDao.insertProduct(toInsert)
+                val inserted = toInsert.copy(id = newId)
                 activityLogDao.insertLog(
                     ActivityLog(
                         action = "Product Created",
                         module = "Inventory",
-                        details = "Added product: ${product.name}",
+                        details = "Added product: ${inserted.name} (Barcode: ${inserted.barcode})",
                         performedBy = _activeUser.value?.fullName ?: "Admin"
                     )
                 )
+                inserted
             } else {
-                productDao.updateProduct(product)
+                // EXISTING PRODUCT EDIT:
+                // Rule 4 & 10: Permanent Product Identity.
+                // Keep the existing product barcode unchanged!
+                val existing = productDao.getProductById(product.id)
+                val preservedBarcode = if (existing != null && existing.barcode.isNotBlank()) {
+                    existing.barcode
+                } else if (product.barcode.isNotBlank()) {
+                    product.barcode.trim()
+                } else {
+                    BarcodeGenerator.generateUniqueNumericBarcode("890") { candidate ->
+                        productDao.getProductByBarcode(candidate) != null
+                    }
+                }
+                val toUpdate = product.copy(
+                    barcode = preservedBarcode,
+                    updatedAt = System.currentTimeMillis()
+                )
+                productDao.updateProduct(toUpdate)
                 activityLogDao.insertLog(
                     ActivityLog(
                         action = "Product Updated",
                         module = "Inventory",
-                        details = "Updated product: ${product.name}",
+                        details = "Updated product: ${toUpdate.name} (Barcode preserved: ${toUpdate.barcode})",
                         performedBy = _activeUser.value?.fullName ?: "Admin"
                     )
                 )
+                toUpdate
             }
-            launch(Dispatchers.Main) { onSuccess() }
+            launch(Dispatchers.Main) { onResult(finalProduct) }
         }
     }
 
@@ -972,12 +1010,26 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val mappedItems = items.map { it.copy(purchaseId = purchaseId) }
             purchaseDao.insertPurchaseItems(mappedItems)
 
-            // Update stock for purchased products
+            // Update stock for purchased products and ensure barcode is generated if blank
             for (item in items) {
                 val p = productDao.getProductById(item.productId)
                 if (p != null) {
                     val newStock = p.stockQuantity + item.quantity
-                    productDao.updateProduct(p.copy(stockQuantity = newStock, purchasePrice = item.unitCost))
+                    val effectiveBarcode = if (p.barcode.isBlank()) {
+                        BarcodeGenerator.generateUniqueNumericBarcode("890") { candidate ->
+                            productDao.getProductByBarcode(candidate) != null
+                        }
+                    } else {
+                        p.barcode
+                    }
+                    productDao.updateProduct(
+                        p.copy(
+                            barcode = effectiveBarcode,
+                            stockQuantity = newStock,
+                            purchasePrice = item.unitCost,
+                            updatedAt = System.currentTimeMillis()
+                        )
+                    )
                 }
             }
 
