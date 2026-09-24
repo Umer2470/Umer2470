@@ -40,7 +40,8 @@ data class BackupPackage(
     val saleReturns: List<SaleReturn> = emptyList(),
     val saleReturnItems: List<SaleReturnItem> = emptyList(),
     val stockMovements: List<StockMovement> = emptyList(),
-    val fbrInvoiceRecords: List<FbrInvoiceRecord> = emptyList()
+    val fbrInvoiceRecords: List<FbrInvoiceRecord> = emptyList(),
+    val invoiceSequences: List<InvoiceSequence> = emptyList()
 )
 
 enum class BackupDestination {

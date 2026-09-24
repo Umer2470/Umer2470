@@ -98,6 +98,7 @@ fun SalesPosScreen(
 
     // Sequential Checkout & Payment Screen Dialog (Only displayed after user clicks Proceed to Checkout)
     var showCheckoutDialog by remember { mutableStateOf(false) }
+    var isProcessingCheckout by remember { mutableStateOf(false) }
 
     // Invoice Receipt Dialog
     var showReceiptDialog by remember { mutableStateOf(false) }
@@ -135,7 +136,11 @@ fun SalesPosScreen(
     if (showCameraScannerDialog && isCameraScannerEnabled) {
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showCameraScannerDialog = false },
-            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+            properties = androidx.compose.ui.window.DialogProperties(
+                dismissOnBackPress = true,
+                dismissOnClickOutside = false,
+                usePlatformDefaultWidth = false
+            )
         ) {
             Box(
                 modifier = Modifier
@@ -143,6 +148,7 @@ fun SalesPosScreen(
                     .background(Color.Black)
             ) {
                 CameraBarcodeScannerView(
+                    availableProducts = products,
                     onBarcodeScanned = { scannedCode ->
                         val trimmed = scannedCode.trim()
                         val foundProduct = products.find {
@@ -152,10 +158,10 @@ fun SalesPosScreen(
                         if (foundProduct != null) {
                             viewModel.addToCart(foundProduct)
                             successToast = "Scanned & Added: ${foundProduct.name} ($trimmed)"
+                            showCameraScannerDialog = false
                         } else {
                             errorMessage = "Barcode '$trimmed' not found in store catalog"
                         }
-                        showCameraScannerDialog = false
                     },
                     onClose = { showCameraScannerDialog = false },
                     modifier = Modifier.fillMaxSize()
@@ -1003,30 +1009,48 @@ fun SalesPosScreen(
             confirmButton = {
                 Button(
                     onClick = {
+                        if (isProcessingCheckout) return@Button
+                        isProcessingCheckout = true
                         viewModel.completeSale(
                             onSuccess = { sale, items ->
+                                isProcessingCheckout = false
                                 lastSale = sale
                                 lastSaleItems = items
                                 showCheckoutDialog = false
                                 showReceiptDialog = true
-                                successToast = "Sale completed! Invoice #${sale.invoiceNumber}"
+                                successToast = "Sale completed! Invoice ${sale.invoiceNumber}"
                             },
                             onError = { err ->
+                                isProcessingCheckout = false
                                 errorMessage = err
                             }
                         )
                     },
+                    enabled = !isProcessingCheckout,
                     colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth().testTag("confirm_checkout_button")
                 ) {
-                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Complete Sale ($currency %.2f)".format(netAmount), fontWeight = FontWeight.Bold)
+                    if (isProcessingCheckout) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Processing Sale...", fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Complete Sale ($currency %.2f)".format(netAmount), fontWeight = FontWeight.Bold)
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showCheckoutDialog = false }) {
+                TextButton(
+                    onClick = {
+                        if (!isProcessingCheckout) {
+                            showCheckoutDialog = false
+                        }
+                    },
+                    enabled = !isProcessingCheckout
+                ) {
                     Text("Back to Cart")
                 }
             }

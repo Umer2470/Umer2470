@@ -53,8 +53,8 @@ enum class UserRole(
                 // POS Terminal, Invoices, Attendance, Customers are accessible to Cashier and above
                 "pos", "invoice", "attendance", "customers" -> true
 
-                // Inventory, Purchases, Suppliers, Daily Closing are accessible to Supervisor and above
-                "inventory", "purchases", "suppliers", "closing" -> userRole.level >= SUPERVISOR.level
+                // Inventory, Purchases, Suppliers, Daily Closing, Barcode & Labels are accessible to Supervisor and above
+                "inventory", "purchases", "suppliers", "closing", "barcode_labels" -> userRole.level >= SUPERVISOR.level
 
                 // Reports, Cashier Management, General Settings, Recycle Bin, Setup are accessible to Admin and above
                 "reports", "cashier_management", "settings", "recycle_bin", "setup", "logs", "store_management" -> userRole.level >= ADMIN.level

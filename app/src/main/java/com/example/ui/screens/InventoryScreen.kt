@@ -44,7 +44,8 @@ enum class InventoryTab {
 @Composable
 fun InventoryScreen(
     viewModel: StoreViewModel,
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToBarcodeLabels: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val products by viewModel.products.collectAsState()
@@ -438,6 +439,34 @@ fun InventoryScreen(
 
             when (selectedTab) {
                 InventoryTab.ALL_PRODUCTS -> {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "${products.size} Products Registered",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Navy900
+                        )
+
+                        Button(
+                            onClick = onNavigateToBarcodeLabels,
+                            colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.testTag("btn_inventory_to_barcode_labels")
+                        ) {
+                            Icon(
+                                Icons.Default.QrCodeScanner,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                            )
+                            Text("Barcode & Labels", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    }
+
                     // Search Bar
                     OutlinedTextField(
                         value = searchQuery,

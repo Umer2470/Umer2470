@@ -76,6 +76,7 @@ fun DashboardScreen(
         QuickActionItem("Sales POS", Icons.Default.PointOfSale, Navy900, "pos"),
         QuickActionItem("Invoices", Icons.Default.ReceiptLong, Blue600, "invoice"),
         QuickActionItem("Inventory", Icons.Default.Inventory2, Emerald600, "inventory"),
+        QuickActionItem("Barcode & Labels", Icons.Default.QrCodeScanner, Emerald700, "barcode_labels"),
         QuickActionItem("Purchases", Icons.Default.ShoppingBag, Gold600, "purchases"),
         QuickActionItem("Customers", Icons.Default.People, Purple600, "customers"),
         QuickActionItem("Suppliers", Icons.Default.LocalShipping, Navy600, "suppliers"),

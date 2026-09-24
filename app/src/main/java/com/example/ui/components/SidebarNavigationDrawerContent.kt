@@ -187,6 +187,13 @@ fun SidebarNavigationDrawerContent(
                     testTag = "drawer_item_inventory"
                 ),
                 NavChildItem(
+                    title = "Barcode & Labels",
+                    subtitle = "Generate, manage & bulk print stickers",
+                    icon = Icons.Default.QrCodeScanner,
+                    route = "barcode_labels",
+                    testTag = "drawer_item_barcode_labels"
+                ),
+                NavChildItem(
                     title = "Customer Ledger",
                     subtitle = "Khata balances & payment records",
                     icon = Icons.Default.People,

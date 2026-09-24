@@ -38,6 +38,7 @@ sealed class Screen(val route: String) {
     object Invoice : Screen("invoice")
     object Attendance : Screen("attendance")
     object Inventory : Screen("inventory")
+    object BarcodeLabels : Screen("barcode_labels")
     object Customers : Screen("customers")
     object Suppliers : Screen("suppliers")
     object Purchases : Screen("purchases")
@@ -380,6 +381,19 @@ fun AppNavigation(
                         onNavigateBack = { navController.popBackStack() }
                     ) {
                         InventoryScreen(
+                            viewModel = viewModel,
+                            onNavigateBack = { navController.popBackStack() },
+                            onNavigateToBarcodeLabels = { navController.navigate(Screen.BarcodeLabels.route) }
+                        )
+                    }
+                }
+                composable(Screen.BarcodeLabels.route) {
+                    GuardedScreen(
+                        route = Screen.BarcodeLabels.route,
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
+                    ) {
+                        BarcodeLabelsScreen(
                             viewModel = viewModel,
                             onNavigateBack = { navController.popBackStack() }
                         )

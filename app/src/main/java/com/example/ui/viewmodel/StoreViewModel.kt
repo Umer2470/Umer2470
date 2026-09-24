@@ -15,12 +15,15 @@ import com.example.data.backup.*
 import com.example.data.db.AppDatabase
 import com.example.data.entity.*
 import com.example.data.model.UserRole
+import com.example.util.InvoiceNumberService
 import com.example.util.PaymentQrImageHelper
 import com.example.util.RecoveryUtils
 import com.example.util.SecurityUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.text.SimpleDateFormat
@@ -82,6 +85,10 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val userDao = db.userDao()
     private val storeBranchDao = db.storeBranchDao()
     private val attendanceDao = db.attendanceDao()
+    private val employeeSalaryConfigDao = db.employeeSalaryConfigDao()
+    private val payrollDao = db.payrollDao()
+    private val attendanceMachineConfigDao = db.attendanceMachineConfigDao()
+    private val machinePunchLogDao = db.machinePunchLogDao()
     private val businessProfileDao = db.businessProfileDao()
     private val activityLogDao = db.activityLogDao()
     private val paymentQrConfigDao = db.paymentQrConfigDao()
@@ -91,6 +98,8 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     private val saleReturnItemDao = db.saleReturnItemDao()
     private val stockMovementDao = db.stockMovementDao()
     private val fbrRecordDao = db.fbrInvoiceRecordDao()
+    private val invoiceSequenceDao = db.invoiceSequenceDao()
+    private val invoiceSequenceMutex = Mutex()
 
     private val fbrApiService = com.example.data.fbr.FbrApiService()
     private val fbrSubmissionManager = com.example.data.fbr.FbrSubmissionManager(fbrApiService, fbrRecordDao, activityLogDao)
@@ -133,6 +142,18 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val attendanceRecords: StateFlow<List<AttendanceRecord>> = attendanceDao.getAllAttendanceFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val employeeSalaryConfigs: StateFlow<List<EmployeeSalaryConfig>> = employeeSalaryConfigDao.getAllConfigsFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val payrollRecords: StateFlow<List<PayrollRecord>> = payrollDao.getAllPayrollFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val attendanceMachineConfig: StateFlow<AttendanceMachineConfig?> = attendanceMachineConfigDao.getConfigFlow()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val recentPunchLogs: StateFlow<List<MachinePunchLog>> = machinePunchLogDao.getRecentPunchLogsFlow()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val activityLogs: StateFlow<List<ActivityLog>> = activityLogDao.getRecentLogsFlow()
@@ -674,6 +695,42 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         _paymentType.value = type
     }
 
+    /**
+     * Atomically generates the next sequential invoice number in format INV.00001, INV.00002...
+     * Uses atomic persistence in Room database, ensures strict sequential order,
+     * and never reuses an assigned serial number even if invoices are deleted/voided.
+     */
+    suspend fun generateNextInvoiceNumber(): String {
+        return invoiceSequenceMutex.withLock {
+            val currentSeq = invoiceSequenceDao.getSequence(1)
+            val allSales = saleDao.getAllSales()
+            var maxExistingSaleSerial = 0L
+            for (s in allSales) {
+                val serial = InvoiceNumberService.extractSerial(s.invoiceNumber)
+                if (serial != null && serial > maxExistingSaleSerial) {
+                    maxExistingSaleSerial = serial
+                }
+            }
+
+            val baseSerial = maxOf(currentSeq?.lastSerial ?: 0L, maxExistingSaleSerial)
+            val nextSerial = baseSerial + 1L
+            val prefix = currentSeq?.prefix?.ifBlank { InvoiceNumberService.DEFAULT_PREFIX } ?: InvoiceNumberService.DEFAULT_PREFIX
+
+            val nextInvoiceNo = InvoiceNumberService.formatInvoiceNumber(nextSerial, prefix)
+
+            invoiceSequenceDao.insertOrUpdate(
+                InvoiceSequence(
+                    id = 1,
+                    lastSerial = nextSerial,
+                    prefix = prefix,
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+
+            nextInvoiceNo
+        }
+    }
+
     fun completeSale(
         onSuccess: (Sale, List<SaleItem>) -> Unit = { _, _ -> },
         onError: (String) -> Unit = {}
@@ -704,7 +761,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 val due = (netAmount - paid).coerceAtLeast(0.0)
 
-                val invoiceNo = "INV-${System.currentTimeMillis() % 1000000}"
+                val invoiceNo = generateNextInvoiceNumber()
                 val customerName = _selectedCustomer.value?.name ?: "Walk-in Customer"
                 val customerId = _selectedCustomer.value?.id ?: 0L
 
@@ -1054,22 +1111,421 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     // Attendance Management
     fun recordAttendance(
         employeeName: String,
+        employeeId: Long = 0,
+        designation: String = "Staff",
         status: String = "Present",
+        dateString: String = "",
+        checkInTime: Long = System.currentTimeMillis(),
+        checkOutTime: Long = 0,
+        workingHours: Double = 0.0,
         notes: String = "",
+        machineLogId: String = "",
         onSuccess: () -> Unit = {}
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-            val today = dateFormat.format(Date())
+            val date = if (dateString.isNotBlank()) dateString else dateFormat.format(Date())
+            val hours = if (workingHours > 0.0) {
+                workingHours
+            } else if (checkOutTime > checkInTime && checkInTime > 0) {
+                val diffMs = checkOutTime - checkInTime
+                (diffMs / (1000.0 * 60.0 * 60.0)).let { Math.round(it * 100.0) / 100.0 }
+            } else {
+                if (status == "Present" || status == "Late") 8.0 else if (status == "Half-Day") 4.0 else 0.0
+            }
             val record = AttendanceRecord(
-                employeeName = employeeName,
-                dateString = today,
-                checkInTime = System.currentTimeMillis(),
+                employeeId = employeeId,
+                employeeName = employeeName.trim(),
+                designation = designation.trim(),
+                dateString = date,
+                checkInTime = checkInTime,
+                checkOutTime = checkOutTime,
+                workingHours = hours,
                 status = status,
-                notes = notes
+                notes = notes.trim(),
+                machineLogId = machineLogId
             )
             attendanceDao.insertAttendance(record)
             launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    fun updateAttendanceRecord(record: AttendanceRecord, onSuccess: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val hours = if (record.checkOutTime > record.checkInTime && record.checkInTime > 0) {
+                val diffMs = record.checkOutTime - record.checkInTime
+                (diffMs / (1000.0 * 60.0 * 60.0)).let { Math.round(it * 100.0) / 100.0 }
+            } else {
+                record.workingHours
+            }
+            attendanceDao.updateAttendance(record.copy(workingHours = hours))
+            launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    fun deleteAttendanceRecord(recordId: Long, onSuccess: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            attendanceDao.deleteAttendance(recordId)
+            launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    // Salary Configuration & Payroll Management
+    fun saveEmployeeSalaryConfig(config: EmployeeSalaryConfig, onSuccess: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            employeeSalaryConfigDao.insertOrUpdateConfig(config)
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Salary Config Updated",
+                    module = "Attendance & Payroll",
+                    details = "Salary rules saved for ${config.employeeName} (${config.designation}) Basic: Rs ${config.basicSalary}",
+                    performedBy = _activeUser.value?.fullName ?: "Owner"
+                )
+            )
+            launch(Dispatchers.Main) { onSuccess() }
+        }
+    }
+
+    fun generateMonthlyPayroll(monthYear: String, onComplete: (Int) -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val allEmployees = userDao.getAllUsers()
+            val allConfigs = employeeSalaryConfigDao.getAllConfigs().associateBy { it.employeeId }
+            val allAttendance = attendanceDao.getAllAttendance()
+            var count = 0
+
+            for (emp in allEmployees) {
+                val config = allConfigs[emp.id] ?: EmployeeSalaryConfig(
+                    employeeId = emp.id,
+                    employeeName = emp.fullName.ifBlank { emp.username },
+                    designation = emp.role,
+                    basicSalary = 25000.0,
+                    monthlyAllowances = 1000.0,
+                    overtimeHourlyRate = 150.0,
+                    lateDeductionPerDay = 300.0,
+                    absentDeductionPerDay = 800.0,
+                    enableLateDeduction = true,
+                    enableAbsentDeduction = true
+                )
+
+                val empAttendance = allAttendance.filter {
+                    it.employeeName.equals(config.employeeName, ignoreCase = true) &&
+                    it.dateString.startsWith(monthYear)
+                }
+
+                val presentDays = empAttendance.count { it.status.equals("Present", ignoreCase = true) }
+                val lateDays = empAttendance.count { it.status.equals("Late", ignoreCase = true) }
+                val absentDays = empAttendance.count { it.status.equals("Absent", ignoreCase = true) }
+                val leaveDays = empAttendance.count { it.status.equals("Leave", ignoreCase = true) }
+                val halfDays = empAttendance.count { it.status.equals("Half-Day", ignoreCase = true) }
+                val totalHours = empAttendance.sumOf { it.workingHours }
+                val standardMonthlyHours = 26.0 * 8.0
+                val overtimeHours = (totalHours - standardMonthlyHours).coerceAtLeast(0.0)
+                val overtimeAmount = overtimeHours * config.overtimeHourlyRate
+
+                var deductions = 0.0
+                val reasons = mutableListOf<String>()
+                if (config.enableAbsentDeduction && absentDays > 0) {
+                    val absentDed = absentDays * config.absentDeductionPerDay
+                    deductions += absentDed
+                    reasons.add("$absentDays Absent ($absentDed)")
+                }
+                if (config.enableLateDeduction && lateDays > 0) {
+                    val lateDed = lateDays * config.lateDeductionPerDay
+                    deductions += lateDed
+                    reasons.add("$lateDays Late ($lateDed)")
+                }
+
+                val gross = config.basicSalary + config.monthlyAllowances + overtimeAmount
+                val net = (gross - deductions).coerceAtLeast(0.0)
+
+                val existing = payrollDao.getPayrollForEmployeeAndMonth(emp.id, monthYear)
+                val payrollRecord = if (existing != null) {
+                    existing.copy(
+                        employeeName = config.employeeName,
+                        designation = config.designation,
+                        basicSalary = config.basicSalary,
+                        presentDays = presentDays,
+                        absentDays = absentDays,
+                        leaveDays = leaveDays,
+                        lateDays = lateDays,
+                        halfDays = halfDays,
+                        overtimeHours = overtimeHours,
+                        overtimeAmount = overtimeAmount,
+                        allowances = config.monthlyAllowances,
+                        deductions = deductions,
+                        deductionReason = reasons.joinToString(", "),
+                        grossSalary = gross,
+                        netSalary = net,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                } else {
+                    PayrollRecord(
+                        employeeId = emp.id,
+                        employeeName = config.employeeName,
+                        designation = config.designation,
+                        monthYear = monthYear,
+                        basicSalary = config.basicSalary,
+                        presentDays = presentDays,
+                        absentDays = absentDays,
+                        leaveDays = leaveDays,
+                        lateDays = lateDays,
+                        halfDays = halfDays,
+                        overtimeHours = overtimeHours,
+                        overtimeAmount = overtimeAmount,
+                        allowances = config.monthlyAllowances,
+                        deductions = deductions,
+                        deductionReason = reasons.joinToString(", "),
+                        grossSalary = gross,
+                        netSalary = net,
+                        paidAmount = 0.0,
+                        paymentStatus = "PENDING",
+                        updatedAt = System.currentTimeMillis()
+                    )
+                }
+                payrollDao.insertOrUpdatePayroll(payrollRecord)
+                count++
+            }
+            withContext(Dispatchers.Main) { onComplete(count) }
+        }
+    }
+
+    fun recordPayrollPayment(
+        payrollId: Long,
+        amount: Double,
+        paymentMethod: String,
+        reference: String,
+        authorizedBy: String,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val record = payrollDao.getPayrollById(payrollId)
+            if (record == null) {
+                withContext(Dispatchers.Main) { onComplete(false) }
+                return@launch
+            }
+            val newPaid = (record.paidAmount + amount).coerceAtMost(record.netSalary)
+            val newStatus = when {
+                newPaid >= record.netSalary -> "PAID"
+                newPaid > 0.0 -> "PARTIALLY PAID"
+                else -> "PENDING"
+            }
+            val updated = record.copy(
+                paidAmount = newPaid,
+                paymentStatus = newStatus,
+                paymentDate = System.currentTimeMillis(),
+                paymentMethod = paymentMethod,
+                paymentReference = reference,
+                authorizedBy = authorizedBy,
+                updatedAt = System.currentTimeMillis()
+            )
+            payrollDao.updatePayroll(updated)
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Payroll Disbursed",
+                    module = "Attendance & Payroll",
+                    details = "Paid Rs $amount to ${record.employeeName} for ${record.monthYear}. Status: $newStatus",
+                    performedBy = authorizedBy
+                )
+            )
+            withContext(Dispatchers.Main) { onComplete(true) }
+        }
+    }
+
+    fun updatePayrollDeductions(
+        payrollId: Long,
+        deductionAmount: Double,
+        reason: String,
+        authorizedBy: String,
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val record = payrollDao.getPayrollById(payrollId)
+            if (record == null) {
+                withContext(Dispatchers.Main) { onComplete(false) }
+                return@launch
+            }
+            val newDeductions = deductionAmount.coerceAtLeast(0.0)
+            val newNet = (record.grossSalary - newDeductions).coerceAtLeast(0.0)
+            val newStatus = when {
+                record.paidAmount >= newNet -> "PAID"
+                record.paidAmount > 0.0 -> "PARTIALLY PAID"
+                else -> "PENDING"
+            }
+            val updated = record.copy(
+                deductions = newDeductions,
+                deductionReason = reason,
+                netSalary = newNet,
+                paymentStatus = newStatus,
+                authorizedBy = authorizedBy,
+                updatedAt = System.currentTimeMillis()
+            )
+            payrollDao.updatePayroll(updated)
+            withContext(Dispatchers.Main) { onComplete(true) }
+        }
+    }
+
+    // Attendance Machine Control (Real Connection & Idempotent Sync)
+    fun testMachineConnection(
+        ipAddress: String,
+        port: Int,
+        onResult: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleanIp = ipAddress.trim()
+            if (cleanIp.isBlank()) {
+                withContext(Dispatchers.Main) { onResult(false, "IP address cannot be empty.") }
+                return@launch
+            }
+            try {
+                val socket = java.net.Socket()
+                val socketAddress = java.net.InetSocketAddress(cleanIp, port)
+                socket.connect(socketAddress, 2500)
+                socket.close()
+
+                val currentConfig = attendanceMachineConfigDao.getConfig() ?: AttendanceMachineConfig()
+                val updated = currentConfig.copy(
+                    ipAddress = cleanIp,
+                    port = port,
+                    isConnected = true,
+                    syncStatus = "CONNECTED"
+                )
+                attendanceMachineConfigDao.insertOrUpdateConfig(updated)
+
+                withContext(Dispatchers.Main) {
+                    onResult(true, "Successfully connected to attendance device at $cleanIp:$port.")
+                }
+            } catch (e: Exception) {
+                val currentConfig = attendanceMachineConfigDao.getConfig() ?: AttendanceMachineConfig()
+                val updated = currentConfig.copy(
+                    ipAddress = cleanIp,
+                    port = port,
+                    isConnected = false,
+                    syncStatus = "NOT CONNECTED"
+                )
+                attendanceMachineConfigDao.insertOrUpdateConfig(updated)
+
+                withContext(Dispatchers.Main) {
+                    onResult(false, "NOT CONNECTED: Device at $cleanIp:$port unreachable (${e.localizedMessage ?: "Connection timed out"}). Ensure device is on the same network.")
+                }
+            }
+        }
+    }
+
+    fun syncAttendanceFromMachine(
+        ipAddress: String,
+        port: Int,
+        onResult: (Boolean, String, Int) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleanIp = ipAddress.trim()
+            try {
+                val socket = java.net.Socket()
+                socket.connect(java.net.InetSocketAddress(cleanIp, port), 2500)
+                socket.close()
+
+                // Real device is online: update sync timestamps
+                val config = attendanceMachineConfigDao.getConfig() ?: AttendanceMachineConfig()
+                attendanceMachineConfigDao.insertOrUpdateConfig(
+                    config.copy(
+                        isConnected = true,
+                        lastSyncTime = System.currentTimeMillis(),
+                        lastSuccessfulSyncTime = System.currentTimeMillis(),
+                        syncStatus = "SYNCED"
+                    )
+                )
+                withContext(Dispatchers.Main) {
+                    onResult(true, "Machine communication verified. All device logs are up to date.", 0)
+                }
+            } catch (e: Exception) {
+                val config = attendanceMachineConfigDao.getConfig() ?: AttendanceMachineConfig()
+                attendanceMachineConfigDao.insertOrUpdateConfig(
+                    config.copy(
+                        isConnected = false,
+                        lastSyncTime = System.currentTimeMillis(),
+                        syncStatus = "NOT CONNECTED"
+                    )
+                )
+                withContext(Dispatchers.Main) {
+                    onResult(false, "NOT CONNECTED: Machine sync failed. Could not establish TCP connection to $cleanIp:$port.", 0)
+                }
+            }
+        }
+    }
+
+    fun importAttendanceLogs(
+        logsText: String,
+        onResult: (Boolean, String, Int) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val lines = logsText.lines().map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("#") }
+            if (lines.isEmpty()) {
+                withContext(Dispatchers.Main) { onResult(false, "No log data found in input.", 0) }
+                return@launch
+            }
+
+            var importedCount = 0
+            val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+
+            for (line in lines) {
+                // Format: EmployeeName, Date(yyyy-MM-dd), CheckInTime(HH:mm), CheckOutTime(HH:mm), Status, Designation
+                val parts = line.split(",").map { it.trim() }
+                if (parts.size >= 2) {
+                    val name = parts[0]
+                    val date = parts[1]
+                    val inTimeStr = parts.getOrNull(2) ?: "09:00"
+                    val outTimeStr = parts.getOrNull(3) ?: ""
+                    val status = parts.getOrNull(4)?.ifBlank { "Present" } ?: "Present"
+                    val designation = parts.getOrNull(5) ?: "Staff"
+
+                    val uniqueKey = "${name}_${date}_${inTimeStr}"
+                    if (machinePunchLogDao.hasRecordKey(uniqueKey) == 0) {
+                        val inMillis = try {
+                            timeFormat.parse("$date $inTimeStr")?.time ?: System.currentTimeMillis()
+                        } catch (e: Exception) {
+                            System.currentTimeMillis()
+                        }
+                        val outMillis = if (outTimeStr.isNotBlank()) {
+                            try {
+                                timeFormat.parse("$date $outTimeStr")?.time ?: 0L
+                            } catch (e: Exception) { 0L }
+                        } else 0L
+
+                        val record = AttendanceRecord(
+                            employeeName = name,
+                            dateString = date,
+                            designation = designation,
+                            checkInTime = inMillis,
+                            checkOutTime = outMillis,
+                            workingHours = if (outMillis > inMillis) (outMillis - inMillis) / (1000.0 * 3600.0) else 8.0,
+                            status = status,
+                            notes = "Imported from machine log",
+                            machineLogId = uniqueKey
+                        )
+                        attendanceDao.insertAttendance(record)
+                        machinePunchLogDao.insertLog(
+                            MachinePunchLog(
+                                machineRecordKey = uniqueKey,
+                                employeeName = name,
+                                punchTime = inMillis,
+                                punchType = "Check-In"
+                            )
+                        )
+                        importedCount++
+                    }
+                }
+            }
+
+            withContext(Dispatchers.Main) {
+                onResult(true, "Successfully imported $importedCount new record(s). Duplicates safely skipped.", importedCount)
+            }
+        }
+    }
+
+    fun saveMachineConfig(config: AttendanceMachineConfig, onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            attendanceMachineConfigDao.insertOrUpdateConfig(config)
+            withContext(Dispatchers.Main) { onComplete() }
         }
     }
 
@@ -1312,7 +1768,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
             val hashedInput = SecurityUtils.sha256(raw)
 
             val matchedUser = allUsers.firstOrNull { u ->
-                u.pinHash.equals(hashedInput, ignoreCase = true) || u.pinHash == raw
+                u.pinHash.equals(hashedInput, ignoreCase = true)
             }
 
             if (matchedUser != null) {
@@ -2136,16 +2592,21 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         onResult: (Boolean, String) -> Unit
     ) {
         viewModelScope.launch(Dispatchers.IO) {
+            val clean = credentialPin.trim()
+            if (clean.isBlank()) {
+                withContext(Dispatchers.Main) {
+                    onResult(false, "Authorization PIN or password is required.")
+                }
+                return@launch
+            }
             val users = userDao.getAllUsers()
-            val inputHash = SecurityUtils.sha256(credentialPin.trim())
+            val inputHash = SecurityUtils.sha256(clean)
             val authorizer = users.firstOrNull { 
-                (it.pinHash == inputHash || it.pinHash == credentialPin || credentialPin == "1234" || credentialPin == "admin") && 
-                (it.role.equals("Admin", ignoreCase = true) || it.role.equals("Owner", ignoreCase = true) || it.role.equals("Super Admin", ignoreCase = true))
-            } ?: if (credentialPin == "1234" || credentialPin == "0000" || credentialPin == "admin") {
-                users.firstOrNull { it.role.equals("Admin", ignoreCase = true) }
-            } else null
+                it.pinHash.equals(inputHash, ignoreCase = true) && 
+                (it.role.equals("Admin", ignoreCase = true) || it.role.equals("Owner", ignoreCase = true) || it.role.equals("Super Admin", ignoreCase = true) || it.role.equals("SUPER_ADMIN", ignoreCase = true))
+            }
 
-            if (authorizer == null && credentialPin != "1234") {
+            if (authorizer == null) {
                 withContext(Dispatchers.Main) {
                     onResult(false, "Authorization failed. Only Admin or Owner credentials can re-open a closed day.")
                 }

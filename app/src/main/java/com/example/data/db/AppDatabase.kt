@@ -34,9 +34,14 @@ import kotlinx.coroutines.launch
         SaleReturn::class,
         SaleReturnItem::class,
         StockMovement::class,
-        FbrInvoiceRecord::class
+        FbrInvoiceRecord::class,
+        EmployeeSalaryConfig::class,
+        PayrollRecord::class,
+        AttendanceMachineConfig::class,
+        MachinePunchLog::class,
+        InvoiceSequence::class
     ],
-    version = 5,
+    version = 7,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -49,6 +54,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun storeBranchDao(): StoreBranchDao
     abstract fun attendanceDao(): AttendanceDao
+    abstract fun employeeSalaryConfigDao(): EmployeeSalaryConfigDao
+    abstract fun payrollDao(): PayrollDao
+    abstract fun attendanceMachineConfigDao(): AttendanceMachineConfigDao
+    abstract fun machinePunchLogDao(): MachinePunchLogDao
     abstract fun businessProfileDao(): BusinessProfileDao
     abstract fun activityLogDao(): ActivityLogDao
     abstract fun paymentQrConfigDao(): PaymentQrConfigDao
@@ -58,6 +67,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun saleReturnItemDao(): SaleReturnItemDao
     abstract fun stockMovementDao(): StockMovementDao
     abstract fun fbrInvoiceRecordDao(): FbrInvoiceRecordDao
+    abstract fun invoiceSequenceDao(): InvoiceSequenceDao
+
 
     companion object {
         @Volatile
@@ -238,6 +249,108 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                // Update attendance_records
+                db.execSQL("ALTER TABLE attendance_records ADD COLUMN designation TEXT NOT NULL DEFAULT 'Staff'")
+                db.execSQL("ALTER TABLE attendance_records ADD COLUMN workingHours REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE attendance_records ADD COLUMN machineLogId TEXT NOT NULL DEFAULT ''")
+
+                // Create employee_salary_configs
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `employee_salary_configs` (
+                        `employeeId` INTEGER PRIMARY KEY NOT NULL,
+                        `employeeName` TEXT NOT NULL DEFAULT '',
+                        `designation` TEXT NOT NULL DEFAULT 'Staff',
+                        `basicSalary` REAL NOT NULL DEFAULT 0.0,
+                        `monthlyAllowances` REAL NOT NULL DEFAULT 0.0,
+                        `overtimeHourlyRate` REAL NOT NULL DEFAULT 0.0,
+                        `lateDeductionPerDay` REAL NOT NULL DEFAULT 0.0,
+                        `absentDeductionPerDay` REAL NOT NULL DEFAULT 0.0,
+                        `enableLateDeduction` INTEGER NOT NULL DEFAULT 0,
+                        `enableAbsentDeduction` INTEGER NOT NULL DEFAULT 0,
+                        `joiningDate` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+
+                // Create payroll_records
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `payroll_records` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `employeeId` INTEGER NOT NULL DEFAULT 0,
+                        `employeeName` TEXT NOT NULL DEFAULT '',
+                        `designation` TEXT NOT NULL DEFAULT 'Staff',
+                        `monthYear` TEXT NOT NULL DEFAULT '',
+                        `basicSalary` REAL NOT NULL DEFAULT 0.0,
+                        `workingDays` INTEGER NOT NULL DEFAULT 26,
+                        `presentDays` INTEGER NOT NULL DEFAULT 0,
+                        `absentDays` INTEGER NOT NULL DEFAULT 0,
+                        `leaveDays` INTEGER NOT NULL DEFAULT 0,
+                        `lateDays` INTEGER NOT NULL DEFAULT 0,
+                        `halfDays` INTEGER NOT NULL DEFAULT 0,
+                        `overtimeHours` REAL NOT NULL DEFAULT 0.0,
+                        `overtimeAmount` REAL NOT NULL DEFAULT 0.0,
+                        `allowances` REAL NOT NULL DEFAULT 0.0,
+                        `deductions` REAL NOT NULL DEFAULT 0.0,
+                        `deductionReason` TEXT NOT NULL DEFAULT '',
+                        `grossSalary` REAL NOT NULL DEFAULT 0.0,
+                        `netSalary` REAL NOT NULL DEFAULT 0.0,
+                        `paidAmount` REAL NOT NULL DEFAULT 0.0,
+                        `paymentStatus` TEXT NOT NULL DEFAULT 'PENDING',
+                        `paymentDate` INTEGER NOT NULL DEFAULT 0,
+                        `paymentMethod` TEXT NOT NULL DEFAULT 'Cash',
+                        `paymentReference` TEXT NOT NULL DEFAULT '',
+                        `authorizedBy` TEXT NOT NULL DEFAULT '',
+                        `updatedAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+
+                // Create attendance_machine_configs
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `attendance_machine_configs` (
+                        `id` INTEGER PRIMARY KEY NOT NULL,
+                        `deviceName` TEXT NOT NULL DEFAULT 'ZKTeco K40 Biometric',
+                        `deviceId` TEXT NOT NULL DEFAULT 'DEV-ZK-101',
+                        `connectionType` TEXT NOT NULL DEFAULT 'TCP/IP Network',
+                        `ipAddress` TEXT NOT NULL DEFAULT '192.168.1.201',
+                        `port` INTEGER NOT NULL DEFAULT 4370,
+                        `isAutoSyncEnabled` INTEGER NOT NULL DEFAULT 0,
+                        `isConnected` INTEGER NOT NULL DEFAULT 0,
+                        `lastSyncTime` INTEGER NOT NULL DEFAULT 0,
+                        `lastSuccessfulSyncTime` INTEGER NOT NULL DEFAULT 0,
+                        `syncStatus` TEXT NOT NULL DEFAULT 'NOT CONNECTED'
+                    )
+                """.trimIndent())
+
+                // Create machine_punch_logs
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `machine_punch_logs` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `machineRecordKey` TEXT NOT NULL DEFAULT '',
+                        `employeeId` INTEGER NOT NULL DEFAULT 0,
+                        `employeeName` TEXT NOT NULL DEFAULT '',
+                        `punchTime` INTEGER NOT NULL DEFAULT 0,
+                        `punchType` TEXT NOT NULL DEFAULT 'Check-In',
+                        `syncedAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_machine_punch_logs_machineRecordKey` ON `machine_punch_logs` (`machineRecordKey`)")
+            }
+        }
+
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `invoice_sequences` (
+                        `id` INTEGER PRIMARY KEY NOT NULL,
+                        `lastSerial` INTEGER NOT NULL DEFAULT 0,
+                        `prefix` TEXT NOT NULL DEFAULT 'INV.',
+                        `updatedAt` INTEGER NOT NULL DEFAULT 0
+                    )
+                """.trimIndent())
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -245,7 +358,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "sentry_store_pos_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .fallbackToDestructiveMigration(false)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {
@@ -264,6 +377,16 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private suspend fun seedInitialData(database: AppDatabase) {
+            if (database.invoiceSequenceDao().getSequence(1) == null) {
+                database.invoiceSequenceDao().insertOrUpdate(
+                    InvoiceSequence(
+                        id = 1,
+                        lastSerial = 0L,
+                        prefix = "INV.",
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+            }
             database.storeSettingsDao().insertOrUpdateSettings(
                 StoreSettings(
                     id = 1,

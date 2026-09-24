@@ -220,7 +220,7 @@ fun OwnerControlCenterScreen(
                                 }
 
                                 Text(
-                                    text = "Owner Security Setup",
+                                    text = "CREATE OWNER PASSWORD",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
                                     color = Navy900,
@@ -228,7 +228,7 @@ fun OwnerControlCenterScreen(
                                 )
 
                                 Text(
-                                    text = "No Owner Security PIN has been configured. As store proprietor or developer, establish your dedicated Owner PIN to secure this control center.",
+                                    text = "No Owner Password has ever been configured. As store proprietor or developer, establish your secret Owner Password to secure this control center.",
                                     fontSize = 12.sp,
                                     color = Navy500,
                                     textAlign = TextAlign.Center
@@ -240,7 +240,7 @@ fun OwnerControlCenterScreen(
                                         setupOwnerPin = it
                                         setupOwnerError = null
                                     },
-                                    label = { Text("Create Dedicated Owner PIN (min 4 characters)") },
+                                    label = { Text("New Owner Password") },
                                     visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                     trailingIcon = {
                                         IconButton(onClick = { isSetupPinVisible = !isSetupPinVisible }) {
@@ -257,14 +257,13 @@ fun OwnerControlCenterScreen(
                                         .fillMaxWidth()
                                         .testTag("setup_owner_pin_input")
                                 )
-
                                 OutlinedTextField(
                                     value = setupOwnerConfirmPin,
                                     onValueChange = {
                                         setupOwnerConfirmPin = it
                                         setupOwnerError = null
                                     },
-                                    label = { Text("Confirm Dedicated Owner PIN") },
+                                    label = { Text("Confirm Owner Password") },
                                     visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                     singleLine = true,
                                     isError = setupOwnerError != null,
@@ -357,7 +356,7 @@ fun OwnerControlCenterScreen(
                                 }
 
                                 Text(
-                                    text = "Owner Security Authorization",
+                                    text = "CURRENT OWNER PASSWORD",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
                                     color = Navy900,
@@ -365,7 +364,7 @@ fun OwnerControlCenterScreen(
                                 )
 
                                 Text(
-                                    text = "Dedicated Owner / Developer Control Center access. Authenticate using your Dedicated Owner Security PIN / Password.",
+                                    text = "Dedicated Owner / Developer Control Center access. Authenticate using your private Owner Password.",
                                     fontSize = 12.sp,
                                     color = Navy500,
                                     textAlign = TextAlign.Center
@@ -377,8 +376,8 @@ fun OwnerControlCenterScreen(
                                         enteredPin = it
                                         pinError = null
                                     },
-                                    label = { Text("Owner Security PIN / Password") },
-                                    placeholder = { Text("Enter Private Owner PIN") },
+                                    label = { Text("Current Owner Password") },
+                                    placeholder = { Text("Enter your Owner Password") },
                                     visualTransformation = if (isPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                     trailingIcon = {
                                         IconButton(onClick = { isPasswordVisible = !isPasswordVisible }) {
@@ -394,7 +393,7 @@ fun OwnerControlCenterScreen(
                                         if (pinError != null) {
                                             Text(pinError!!, color = Rose600)
                                         } else {
-                                            Text("Dedicated Owner PIN Only (Staff PINs & Owner Key are rejected)", fontSize = 11.sp, color = Navy400)
+                                            Text("Private Owner Password only (No staff PINs or backdoors)", fontSize = 11.sp, color = Navy400)
                                         }
                                     },
                                     shape = RoundedCornerShape(10.dp),
@@ -1217,11 +1216,11 @@ fun OwnerControlCenterScreen(
                 confirmOwnerPin = ""
                 changeOwnerPinError = null
             },
-            title = { Text("Change Owner Security PIN", fontWeight = FontWeight.Bold, color = Navy900) },
+            title = { Text("CHANGE OWNER PASSWORD", fontWeight = FontWeight.Bold, color = Navy900) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        "Verification required. Enter your current Owner PIN before setting a new one.",
+                        "Verification required. Enter your Current Owner Password before choosing a new one. The old password will be invalidated immediately.",
                         fontSize = 12.sp,
                         color = Navy600
                     )
@@ -1229,11 +1228,10 @@ fun OwnerControlCenterScreen(
                     OutlinedTextField(
                         value = currentOwnerPinInput,
                         onValueChange = {
-                            if (it.length <= 11) currentOwnerPinInput = it
+                            currentOwnerPinInput = it
                             changeOwnerPinError = null
                         },
-                        label = { Text("Current Owner PIN") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        label = { Text("Current Owner Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         isError = changeOwnerPinError != null,
@@ -1243,11 +1241,10 @@ fun OwnerControlCenterScreen(
                     OutlinedTextField(
                         value = newOwnerPin,
                         onValueChange = {
-                            if (it.length <= 11) newOwnerPin = it
+                            newOwnerPin = it
                             changeOwnerPinError = null
                         },
-                        label = { Text("New Security PIN (min 4 digits)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        label = { Text("New Owner Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         isError = changeOwnerPinError != null,
@@ -1257,11 +1254,10 @@ fun OwnerControlCenterScreen(
                     OutlinedTextField(
                         value = confirmOwnerPin,
                         onValueChange = {
-                            if (it.length <= 11) confirmOwnerPin = it
+                            confirmOwnerPin = it
                             changeOwnerPinError = null
                         },
-                        label = { Text("Confirm New PIN") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        label = { Text("Confirm New Owner Password") },
                         visualTransformation = PasswordVisualTransformation(),
                         singleLine = true,
                         isError = changeOwnerPinError != null,
@@ -1282,15 +1278,15 @@ fun OwnerControlCenterScreen(
                 Button(
                     onClick = {
                         if (currentOwnerPinInput.isBlank()) {
-                            changeOwnerPinError = "Please enter your current Owner PIN."
+                            changeOwnerPinError = "Please enter your Current Owner Password."
                             return@Button
                         }
                         if (newOwnerPin.length < 4) {
-                            changeOwnerPinError = "New PIN must be at least 4 digits."
+                            changeOwnerPinError = "New password must be at least 4 characters."
                             return@Button
                         }
                         if (newOwnerPin != confirmOwnerPin) {
-                            changeOwnerPinError = "New PIN and Confirm PIN do not match."
+                            changeOwnerPinError = "New password and Confirm password do not match."
                             return@Button
                         }
                         val success = viewModel.changeOwnerPassword(currentOwnerPinInput.trim(), newOwnerPin.trim())
@@ -1300,16 +1296,16 @@ fun OwnerControlCenterScreen(
                             newOwnerPin = ""
                             confirmOwnerPin = ""
                             changeOwnerPinError = null
-                            toastMessage = "Owner Security PIN updated successfully!"
+                            toastMessage = "Owner Password updated successfully! Old password is now invalid."
                         } else {
-                            changeOwnerPinError = "Current PIN is incorrect or new PIN is invalid/trivial."
+                            changeOwnerPinError = "Current Owner Password is incorrect or new password is not allowed."
                         }
                     },
                     enabled = currentOwnerPinInput.isNotBlank() && newOwnerPin.length >= 4 && confirmOwnerPin.isNotBlank(),
                     colors = ButtonDefaults.buttonColors(containerColor = Navy900),
                     modifier = Modifier.testTag("btn_save_changed_pin")
                 ) {
-                    Text("Save PIN")
+                    Text("Save Owner Password")
                 }
             },
             dismissButton = {

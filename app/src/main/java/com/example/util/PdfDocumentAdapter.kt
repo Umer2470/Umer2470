@@ -11,7 +11,10 @@ import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 
-class PdfDocumentAdapter(private val pdfFile: File) : PrintDocumentAdapter() {
+class PdfDocumentAdapter(
+    private val pdfFile: File,
+    private val pageCount: Int = PrintDocumentInfo.PAGE_COUNT_UNKNOWN
+) : PrintDocumentAdapter() {
 
     override fun onLayout(
         oldAttributes: PrintAttributes?,
@@ -27,7 +30,7 @@ class PdfDocumentAdapter(private val pdfFile: File) : PrintDocumentAdapter() {
 
         val info = PrintDocumentInfo.Builder(pdfFile.name)
             .setContentType(PrintDocumentInfo.CONTENT_TYPE_DOCUMENT)
-            .setPageCount(1)
+            .setPageCount(pageCount)
             .build()
 
         callback?.onLayoutFinished(info, true)

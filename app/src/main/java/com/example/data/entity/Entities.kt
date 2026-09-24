@@ -128,3 +128,14 @@ data class PurchaseItem(
     val unitCost: Double = 0.0,
     val totalCost: Double = 0.0
 )
+
+@JsonClass(generateAdapter = true)
+@Entity(tableName = "invoice_sequences")
+data class InvoiceSequence(
+    @PrimaryKey
+    val id: Int = 1,
+    val lastSerial: Long = 0L,
+    val prefix: String = "INV.",
+    val updatedAt: Long = System.currentTimeMillis()
+)
+

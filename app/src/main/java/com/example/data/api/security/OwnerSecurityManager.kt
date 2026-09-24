@@ -40,14 +40,17 @@ class OwnerSecurityManager private constructor(context: Context) {
 
         val salt = prefs.getString(KEY_SALT, "") ?: ""
 
-        // 2. Ensure Dedicated Owner Security Key is generated
+        // Purge any legacy KEY_OWNER_SECURITY_KEY_HASH so generated device keys can NEVER be used as credentials
+        if (prefs.contains(KEY_OWNER_SECURITY_KEY_HASH)) {
+            prefs.edit().remove(KEY_OWNER_SECURITY_KEY_HASH).apply()
+        }
+
+        // 2. Hardware / device security identifier for audit identification
         if (!prefs.contains(KEY_OWNER_SECURITY_KEY)) {
             val randomToken = UUID.randomUUID().toString().replace("-", "").take(16).uppercase()
             val generatedKey = "OWNER-KEY-$randomToken"
-            val keyHash = hashWithSalt(generatedKey, salt)
             prefs.edit()
                 .putString(KEY_OWNER_SECURITY_KEY, generatedKey)
-                .putString(KEY_OWNER_SECURITY_KEY_HASH, keyHash)
                 .apply()
         }
 
@@ -240,13 +243,11 @@ class OwnerSecurityManager private constructor(context: Context) {
      * The old key is invalidated immediately.
      */
     fun regenerateSecurityKey(): String {
-        val salt = prefs.getString(KEY_SALT, "") ?: ""
         val randomToken = UUID.randomUUID().toString().replace("-", "").take(16).uppercase()
         val generatedKey = "OWNER-KEY-$randomToken"
-        val keyHash = hashWithSalt(generatedKey, salt)
         prefs.edit()
             .putString(KEY_OWNER_SECURITY_KEY, generatedKey)
-            .putString(KEY_OWNER_SECURITY_KEY_HASH, keyHash)
+            .remove(KEY_OWNER_SECURITY_KEY_HASH)
             .apply()
         return generatedKey
     }

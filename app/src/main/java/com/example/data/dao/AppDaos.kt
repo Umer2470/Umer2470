@@ -291,6 +291,12 @@ interface AttendanceDao {
     @Query("SELECT * FROM attendance_records WHERE dateString = :date ORDER BY checkInTime DESC")
     fun getAttendanceForDateFlow(date: String): Flow<List<AttendanceRecord>>
 
+    @Query("SELECT * FROM attendance_records WHERE employeeId = :employeeId ORDER BY checkInTime DESC")
+    fun getAttendanceForEmployeeFlow(employeeId: Long): Flow<List<AttendanceRecord>>
+
+    @Query("SELECT * FROM attendance_records WHERE dateString BETWEEN :startDate AND :endDate ORDER BY checkInTime DESC")
+    fun getAttendanceBetweenDatesFlow(startDate: String, endDate: String): Flow<List<AttendanceRecord>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAttendance(record: AttendanceRecord): Long
 
@@ -300,8 +306,77 @@ interface AttendanceDao {
     @Update
     suspend fun updateAttendance(record: AttendanceRecord)
 
+    @Query("DELETE FROM attendance_records WHERE id = :recordId")
+    suspend fun deleteAttendance(recordId: Long)
+
     @Query("DELETE FROM attendance_records")
     suspend fun clearAllAttendance()
+}
+
+@Dao
+interface EmployeeSalaryConfigDao {
+    @Query("SELECT * FROM employee_salary_configs ORDER BY employeeName ASC")
+    fun getAllConfigsFlow(): Flow<List<EmployeeSalaryConfig>>
+
+    @Query("SELECT * FROM employee_salary_configs")
+    suspend fun getAllConfigs(): List<EmployeeSalaryConfig>
+
+    @Query("SELECT * FROM employee_salary_configs WHERE employeeId = :empId")
+    suspend fun getConfigForEmployee(empId: Long): EmployeeSalaryConfig?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateConfig(config: EmployeeSalaryConfig)
+}
+
+@Dao
+interface PayrollDao {
+    @Query("SELECT * FROM payroll_records ORDER BY id DESC")
+    fun getAllPayrollFlow(): Flow<List<PayrollRecord>>
+
+    @Query("SELECT * FROM payroll_records WHERE monthYear = :monthYear ORDER BY employeeName ASC")
+    fun getPayrollForMonthFlow(monthYear: String): Flow<List<PayrollRecord>>
+
+    @Query("SELECT * FROM payroll_records WHERE monthYear = :monthYear")
+    suspend fun getPayrollForMonth(monthYear: String): List<PayrollRecord>
+
+    @Query("SELECT * FROM payroll_records WHERE id = :id")
+    suspend fun getPayrollById(id: Long): PayrollRecord?
+
+    @Query("SELECT * FROM payroll_records WHERE employeeId = :empId AND monthYear = :monthYear")
+    suspend fun getPayrollForEmployeeAndMonth(empId: Long, monthYear: String): PayrollRecord?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdatePayroll(record: PayrollRecord): Long
+
+    @Update
+    suspend fun updatePayroll(record: PayrollRecord)
+
+    @Query("DELETE FROM payroll_records WHERE id = :id")
+    suspend fun deletePayroll(id: Long)
+}
+
+@Dao
+interface AttendanceMachineConfigDao {
+    @Query("SELECT * FROM attendance_machine_configs WHERE id = 1")
+    fun getConfigFlow(): Flow<AttendanceMachineConfig?>
+
+    @Query("SELECT * FROM attendance_machine_configs WHERE id = 1")
+    suspend fun getConfig(): AttendanceMachineConfig?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdateConfig(config: AttendanceMachineConfig)
+}
+
+@Dao
+interface MachinePunchLogDao {
+    @Query("SELECT COUNT(*) FROM machine_punch_logs WHERE machineRecordKey = :key")
+    suspend fun hasRecordKey(key: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertLog(log: MachinePunchLog): Long
+
+    @Query("SELECT * FROM machine_punch_logs ORDER BY punchTime DESC LIMIT 100")
+    fun getRecentPunchLogsFlow(): Flow<List<MachinePunchLog>>
 }
 
 @Dao
@@ -534,4 +609,20 @@ interface FbrInvoiceRecordDao {
     @Query("DELETE FROM fbr_invoice_records")
     suspend fun clearAllRecords()
 }
+
+@Dao
+interface InvoiceSequenceDao {
+    @Query("SELECT * FROM invoice_sequences WHERE id = :id LIMIT 1")
+    suspend fun getSequence(id: Int = 1): InvoiceSequence?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrUpdate(sequence: InvoiceSequence)
+
+    @Query("SELECT lastSerial FROM invoice_sequences WHERE id = :id LIMIT 1")
+    suspend fun getLastSerial(id: Int = 1): Long?
+
+    @Query("DELETE FROM invoice_sequences")
+    suspend fun clearAllSequences()
+}
+
 

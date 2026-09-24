@@ -8,7 +8,7 @@ import com.example.data.api.network.NetworkConnectionMonitor
 import com.example.data.api.security.OwnerSecurityManager
 import com.example.data.api.security.SecureIdentityManager
 import com.example.data.db.AppDatabase
-import com.example.data.entity.ActivityLog
+import com.example.data.entity.*
 import com.example.util.SecurityUtils
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
@@ -446,6 +446,25 @@ class GoogleDriveBackupManager private constructor(private val context: Context)
             if (pkg.registerShifts.isNotEmpty()) database.registerShiftDao().insertShifts(pkg.registerShifts)
             if (pkg.cashMovements.isNotEmpty()) database.cashMovementDao().insertMovements(pkg.cashMovements)
 
+            // Safely restore and synchronize Invoice Sequence
+            var maxSerialFromSales = 0L
+            for (s in pkg.sales) {
+                val serial = com.example.util.InvoiceNumberService.extractSerial(s.invoiceNumber)
+                if (serial != null && serial > maxSerialFromSales) {
+                    maxSerialFromSales = serial
+                }
+            }
+            val backedUpLastSerial = pkg.invoiceSequences.firstOrNull()?.lastSerial ?: 0L
+            val safeLastSerial = maxOf(maxSerialFromSales, backedUpLastSerial)
+            database.invoiceSequenceDao().insertOrUpdate(
+                InvoiceSequence(
+                    id = 1,
+                    lastSerial = safeLastSerial,
+                    prefix = "INV.",
+                    updatedAt = System.currentTimeMillis()
+                )
+            )
+
             // 3. Update Store Settings (preserve local device IDs)
             pkg.storeSettings?.let { settings ->
                 val current = database.storeSettingsDao().getSettings()
@@ -485,6 +504,7 @@ class GoogleDriveBackupManager private constructor(private val context: Context)
         val fbrInvoiceRecords = database.fbrInvoiceRecordDao().getAllRecords()
         val storeSettings = database.storeSettingsDao().getSettings()
         val businessProfile = database.businessProfileDao().getProfile()
+        val invoiceSeq = database.invoiceSequenceDao().getSequence(1)
 
         val recordCounts = mapOf(
             "Products" to products.size,
@@ -546,7 +566,8 @@ class GoogleDriveBackupManager private constructor(private val context: Context)
             saleReturns = saleReturns,
             saleReturnItems = saleReturnItems,
             stockMovements = stockMovements,
-            fbrInvoiceRecords = fbrInvoiceRecords
+            fbrInvoiceRecords = fbrInvoiceRecords,
+            invoiceSequences = listOfNotNull(invoiceSeq)
         )
 
         val rawJson = packageAdapter.toJson(preliminaryPkg)
