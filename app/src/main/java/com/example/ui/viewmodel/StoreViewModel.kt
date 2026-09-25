@@ -875,9 +875,14 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val finalProduct = if (product.id == 0L) {
                 // NEW PRODUCT:
-                // If barcode is blank, automatically generate a unique numeric barcode
+                // Rule 1, 2, 3: Database-controlled sequential Master Barcode Generation
                 val effectiveBarcode = if (product.barcode.isBlank()) {
-                    BarcodeGenerator.generateUniqueNumericBarcode("890") { candidate ->
+                    val allProducts = productDao.getAllProducts()
+                    val existingCodes = allProducts.map { it.barcode.trim() }
+                    BarcodeGenerator.generateNextMasterBarcode(
+                        prefix = "200",
+                        existingBarcodes = existingCodes
+                    ) { candidate ->
                         productDao.getProductByBarcode(candidate) != null
                     }
                 } else {
@@ -893,22 +898,27 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     ActivityLog(
                         action = "Product Created",
                         module = "Inventory",
-                        details = "Added product: ${inserted.name} (Barcode: ${inserted.barcode})",
+                        details = "Added product: ${inserted.name} (Master Barcode: ${inserted.barcode})",
                         performedBy = _activeUser.value?.fullName ?: "Admin"
                     )
                 )
                 inserted
             } else {
                 // EXISTING PRODUCT EDIT:
-                // Rule 4 & 10: Permanent Product Identity.
-                // Keep the existing product barcode unchanged!
+                // Rule 1 & 4: ONE PRODUCT = ONE MASTER BARCODE.
+                // Barcode is PERMANENT. Keep the existing product barcode strictly unchanged!
                 val existing = productDao.getProductById(product.id)
                 val preservedBarcode = if (existing != null && existing.barcode.isNotBlank()) {
                     existing.barcode
                 } else if (product.barcode.isNotBlank()) {
                     product.barcode.trim()
                 } else {
-                    BarcodeGenerator.generateUniqueNumericBarcode("890") { candidate ->
+                    val allProducts = productDao.getAllProducts()
+                    val existingCodes = allProducts.map { it.barcode.trim() }
+                    BarcodeGenerator.generateNextMasterBarcode(
+                        prefix = "200",
+                        existingBarcodes = existingCodes
+                    ) { candidate ->
                         productDao.getProductByBarcode(candidate) != null
                     }
                 }
@@ -921,7 +931,7 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                     ActivityLog(
                         action = "Product Updated",
                         module = "Inventory",
-                        details = "Updated product: ${toUpdate.name} (Barcode preserved: ${toUpdate.barcode})",
+                        details = "Updated product: ${toUpdate.name} (Master Barcode preserved: ${toUpdate.barcode})",
                         performedBy = _activeUser.value?.fullName ?: "Admin"
                     )
                 )
@@ -1016,7 +1026,12 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
                 if (p != null) {
                     val newStock = p.stockQuantity + item.quantity
                     val effectiveBarcode = if (p.barcode.isBlank()) {
-                        BarcodeGenerator.generateUniqueNumericBarcode("890") { candidate ->
+                        val allProducts = productDao.getAllProducts()
+                        val existingCodes = allProducts.map { it.barcode.trim() }
+                        BarcodeGenerator.generateNextMasterBarcode(
+                            prefix = "200",
+                            existingBarcodes = existingCodes
+                        ) { candidate ->
                             productDao.getProductByBarcode(candidate) != null
                         }
                     } else {

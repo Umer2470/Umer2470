@@ -247,6 +247,60 @@ object BarcodeGenerator {
     }
 
     /**
+     * Formats a database-controlled Master Barcode using the standard retail prefix "200"
+     * and a 9-digit sequence with checksum.
+     * Sequence 1 -> 2000000000017
+     * Sequence 2 -> 2000000000024
+     * Sequence 3 -> 2000000000031
+     * etc.
+     */
+    fun formatMasterBarcode(sequence: Long, prefix: String = "200"): String {
+        val seqPart = sequence.toString().padStart(9, '0')
+        val base = "$prefix$seqPart" // 12 digits e.g. "200000000001"
+        var sum = 8
+        for (i in base.indices) {
+            val digit = base[i].digitToInt()
+            val weight = if (i % 2 == 0) 1 else 3
+            sum += digit * weight
+        }
+        val rem = sum % 10
+        val check = if (rem == 0) 0 else 10 - rem
+        return "$base$check"
+    }
+
+    /**
+     * Generates the next sequential Master Barcode (database-controlled sequence).
+     * Rule: Never generate barcode from product name, price, or random temporary value.
+     * Follows exact sequential format (Product A -> 2000000000017, Product B -> 2000000000024, etc.)
+     */
+    suspend fun generateNextMasterBarcode(
+        prefix: String = "200",
+        existingBarcodes: Collection<String> = emptyList(),
+        isBarcodeTaken: suspend (String) -> Boolean = { false }
+    ): String {
+        var maxSeq = 0L
+        val prefixLen = prefix.length
+        for (barcode in existingBarcodes) {
+            val clean = barcode.trim()
+            if (clean.startsWith(prefix) && clean.length == 13) {
+                val seqStr = clean.substring(prefixLen, 12)
+                val seq = seqStr.toLongOrNull() ?: 0L
+                if (seq > maxSeq) maxSeq = seq
+            }
+        }
+        var nextSeq = maxOf(maxSeq + 1, (existingBarcodes.size + 1).toLong())
+        var candidate: String
+        var attempts = 0
+        do {
+            candidate = formatMasterBarcode(nextSeq, prefix)
+            nextSeq++
+            attempts++
+        } while ((existingBarcodes.contains(candidate) || isBarcodeTaken(candidate)) && attempts < 500)
+
+        return candidate
+    }
+
+    /**
      * Generates a 13-digit numeric barcode starting with 890 (or custom prefix)
      * with Mod10 checksum, perfectly compatible with Code 128 and retail scanners.
      * Verifies uniqueness against database/existing records before returning.

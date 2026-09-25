@@ -210,3 +210,100 @@ data class ProductLabelItem(
     var customBarcode: String = product.barcode,
     var barcodeType: BarcodeType = BarcodeGenerator.detectBarcodeType(product.barcode)
 )
+
+/**
+ * Supported Promotional Material Formats
+ */
+enum class PromoMaterialType(
+    val id: String,
+    val displayName: String,
+    val description: String,
+    val widthMm: Float,
+    val heightMm: Float,
+    val isSheet: Boolean,
+    val columns: Int = 1,
+    val rows: Int = 1
+) {
+    SHELF_TALKER_80X50(
+        id = "SHELF_TALKER_80X50",
+        displayName = "Shelf Edge Talker (80 × 50 mm)",
+        description = "Compact shelf talker with bold promotional badge, price & Master Barcode",
+        widthMm = 80f,
+        heightMm = 50f,
+        isSheet = false
+    ),
+    SHELF_TALKER_100X60(
+        id = "SHELF_TALKER_100X60",
+        displayName = "Wide Shelf Talker (100 × 60 mm)",
+        description = "Large shelf tag with regular price strike-through and discount badge",
+        widthMm = 100f,
+        heightMm = 60f,
+        isSheet = false
+    ),
+    POSTER_A4(
+        id = "POSTER_A4",
+        displayName = "Full Page Promo Poster (A4 210 × 297 mm)",
+        description = "High-impact window / store wall promotional poster with Master Barcode",
+        widthMm = 210f,
+        heightMm = 297f,
+        isSheet = false
+    ),
+    POSTER_A5(
+        id = "POSTER_A5",
+        displayName = "Counter Stand / Tent Sign (A5 148 × 210 mm)",
+        description = "Half-page countertop promotional display sign",
+        widthMm = 148f,
+        heightMm = 210f,
+        isSheet = false
+    ),
+    A4_4_PROMO_CARDS(
+        id = "A4_4_PROMO_CARDS",
+        displayName = "A4 Sheet — 4 Display Signs (2 × 2)",
+        description = "Print 4 table-top / shelf promo cards per A4 page",
+        widthMm = 210f,
+        heightMm = 297f,
+        isSheet = true,
+        columns = 2,
+        rows = 2
+    );
+
+    val labelsPerPage: Int get() = columns * rows
+
+    companion object {
+        fun fromId(id: String?): PromoMaterialType {
+            return entries.find { it.id.equals(id, ignoreCase = true) } ?: SHELF_TALKER_80X50
+        }
+    }
+}
+
+enum class PromoTheme(
+    val id: String,
+    val title: String,
+    val primaryColorHex: String,
+    val defaultBadge: String
+) {
+    SPECIAL_OFFER("SPECIAL_OFFER", "Special Offer", "#DC2626", "SPECIAL OFFER"),
+    HOT_DEAL("HOT_DEAL", "Hot Deal", "#EA580C", "HOT DEAL 🔥"),
+    NEW_ARRIVAL("NEW_ARRIVAL", "New Arrival", "#2563EB", "NEW ARRIVAL ✨"),
+    SUPER_SAVER("SUPER_SAVER", "Super Saver", "#059669", "SUPER SAVER 💰"),
+    CLEARANCE("CLEARANCE", "Clearance Sale", "#7C3AED", "CLEARANCE SALE"),
+    STORE_SPECIAL("STORE_SPECIAL", "Store Special", "#0F172A", "EXCLUSIVE PROMOTION")
+}
+
+data class PromoPrintOptions(
+    val materialType: PromoMaterialType = PromoMaterialType.SHELF_TALKER_80X50,
+    val theme: PromoTheme = PromoTheme.SPECIAL_OFFER,
+    val customBadgeText: String = "",
+    val showStoreName: Boolean = true,
+    val showStoreLogo: Boolean = false,
+    val showRegularPrice: Boolean = true,
+    val discountPercent: Int = 15,
+    val showMasterBarcode: Boolean = true,
+    val showBarcodeNumber: Boolean = true,
+    val showCategory: Boolean = true,
+    val showUnit: Boolean = true,
+    val showCutBorder: Boolean = true,
+    val footerText: String = "Special Promotion • Scan Barcode at Checkout",
+    val customStoreName: String = "",
+    val customCurrencySymbol: String = ""
+)

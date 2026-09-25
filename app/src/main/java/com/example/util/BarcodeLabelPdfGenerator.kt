@@ -441,4 +441,313 @@ object BarcodeLabelPdfGenerator {
             Toast.makeText(context, "Sharing failed: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
+
+    /**
+     * Generates a printable PDF for Promotional Material & Shelf Talkers featuring the Master Barcode
+     */
+    fun generatePromoMaterialPdf(
+        context: Context,
+        items: List<ProductLabelItem>,
+        settings: StoreSettings,
+        options: PromoPrintOptions
+    ): File? {
+        val expandedList = mutableListOf<ProductLabelItem>()
+        for (item in items) {
+            val copies = max(1, item.copies)
+            repeat(copies) { expandedList.add(item) }
+        }
+        if (expandedList.isEmpty()) return null
+
+        val pdfDocument = PdfDocument()
+
+        return try {
+            val storeLogoBitmap = if (options.showStoreLogo) {
+                BrandingImageHelper.getLogoBitmap(context, settings.logoUri)
+            } else null
+
+            val storeName = if (options.customStoreName.isNotBlank()) {
+                options.customStoreName.trim()
+            } else {
+                settings.storeName.ifBlank { "SENTRY STORE" }
+            }
+
+            val currencySymbol = if (options.customCurrencySymbol.isNotBlank()) {
+                options.customCurrencySymbol.trim()
+            } else {
+                settings.currencySymbol.ifBlank { "Rs." }
+            }
+
+            val materialType = options.materialType
+
+            if (!materialType.isSheet) {
+                val pageWidth = (materialType.widthMm * MM_TO_POINTS).toInt()
+                val pageHeight = (materialType.heightMm * MM_TO_POINTS).toInt()
+
+                var pageNumber = 1
+                for (item in expandedList) {
+                    val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                    val page = pdfDocument.startPage(pageInfo)
+                    val canvas = page.canvas
+
+                    val rect = RectF(0f, 0f, pageWidth.toFloat(), pageHeight.toFloat())
+                    drawSinglePromoMaterial(
+                        canvas = canvas,
+                        bounds = rect,
+                        item = item,
+                        storeName = storeName,
+                        currencySymbol = currencySymbol,
+                        logoBitmap = storeLogoBitmap,
+                        options = options
+                    )
+
+                    pdfDocument.finishPage(page)
+                    pageNumber++
+                }
+            } else {
+                // A4 4-Up Promo Sheet
+                val pageWidth = (materialType.widthMm * MM_TO_POINTS).toInt() // 595 pt
+                val pageHeight = (materialType.heightMm * MM_TO_POINTS).toInt() // 842 pt
+                val margin = 8f * MM_TO_POINTS
+                val cellW = (pageWidth - margin * 2) / 2f
+                val cellH = (pageHeight - margin * 2) / 2f
+
+                var itemIdx = 0
+                var pageNumber = 1
+                while (itemIdx < expandedList.size) {
+                    val pageInfo = PdfDocument.PageInfo.Builder(pageWidth, pageHeight, pageNumber).create()
+                    val page = pdfDocument.startPage(pageInfo)
+                    val canvas = page.canvas
+
+                    for (row in 0 until 2) {
+                        for (col in 0 until 2) {
+                            if (itemIdx >= expandedList.size) break
+                            val left = margin + col * cellW
+                            val top = margin + row * cellH
+                            val rect = RectF(left, top, left + cellW, top + cellH)
+                            drawSinglePromoMaterial(
+                                canvas = canvas,
+                                bounds = rect,
+                                item = expandedList[itemIdx],
+                                storeName = storeName,
+                                currencySymbol = currencySymbol,
+                                logoBitmap = storeLogoBitmap,
+                                options = options
+                            )
+                            itemIdx++
+                        }
+                    }
+                    pdfDocument.finishPage(page)
+                    pageNumber++
+                }
+            }
+
+            val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+            val filename = "PromoMaterial_${materialType.id}_$timeStamp.pdf"
+            val outputDir = context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) ?: context.cacheDir
+            if (!outputDir.exists()) outputDir.mkdirs()
+
+            val pdfFile = File(outputDir, filename)
+            FileOutputStream(pdfFile).use { out ->
+                pdfDocument.writeTo(out)
+            }
+            pdfFile
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        } finally {
+            pdfDocument.close()
+        }
+    }
+
+    /**
+     * Renders a high-impact promotional sign or shelf-talker with Master Barcode
+     */
+    fun drawSinglePromoMaterial(
+        canvas: Canvas,
+        bounds: RectF,
+        item: ProductLabelItem,
+        storeName: String,
+        currencySymbol: String,
+        logoBitmap: Bitmap?,
+        options: PromoPrintOptions
+    ) {
+        val width = bounds.width()
+        val height = bounds.height()
+        val centerX = bounds.centerX()
+
+        val themeColor = try {
+            Color.parseColor(options.theme.primaryColorHex)
+        } catch (_: Exception) {
+            Color.RED
+        }
+
+        // Draw Outer Border / Background
+        if (options.showCutBorder) {
+            val borderPaint = Paint().apply {
+                color = Color.argb(120, 200, 200, 200)
+                style = Paint.Style.STROKE
+                strokeWidth = 1f
+                isAntiAlias = true
+            }
+            canvas.drawRect(bounds, borderPaint)
+        }
+
+        // Top Banner for Promotional Badge
+        val bannerHeight = min(height * 0.16f, 32f)
+        val bannerPaint = Paint().apply {
+            color = themeColor
+            style = Paint.Style.FILL
+            isAntiAlias = true
+        }
+        canvas.drawRect(bounds.left, bounds.top, bounds.right, bounds.top + bannerHeight, bannerPaint)
+
+        // Banner Text (e.g. "SPECIAL OFFER", "HOT DEAL 🔥")
+        val badgeText = options.customBadgeText.ifBlank { options.theme.defaultBadge }
+        val badgePaint = Paint().apply {
+            color = Color.WHITE
+            textSize = max(bannerHeight * 0.52f, 8f)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+        val badgeY = bounds.top + (bannerHeight / 2f) - ((badgePaint.descent() + badgePaint.ascent()) / 2f)
+        canvas.drawText(badgeText, centerX, badgeY, badgePaint)
+
+        var currentY = bounds.top + bannerHeight + (height * 0.03f)
+
+        // Store Name
+        if (options.showStoreName) {
+            val storePaint = Paint().apply {
+                color = Color.DKGRAY
+                textSize = max(min(height * 0.05f, 11f), 7f)
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                textAlign = Paint.Align.CENTER
+                isAntiAlias = true
+            }
+            val storeText = ellipsize(storeName.uppercase(Locale.US), storePaint, width * 0.9f)
+            currentY += storePaint.textSize
+            canvas.drawText(storeText, centerX, currentY, storePaint)
+            currentY += 3f
+        }
+
+        // Product Name (Bold & Large)
+        val namePaint = Paint().apply {
+            color = Color.BLACK
+            textSize = max(min(height * 0.09f, 18f), 9.5f)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+        val prodName = ellipsize(item.product.name.trim(), namePaint, width * 0.92f)
+        currentY += namePaint.textSize + 2f
+        canvas.drawText(prodName, centerX, currentY, namePaint)
+        currentY += 3f
+
+        // Category / Unit subtitle
+        if (options.showCategory || options.showUnit) {
+            val subPaint = Paint().apply {
+                color = Color.GRAY
+                textSize = max(min(height * 0.045f, 9.5f), 6.5f)
+                typeface = Typeface.DEFAULT
+                textAlign = Paint.Align.CENTER
+                isAntiAlias = true
+            }
+            val categoryStr = if (options.showCategory) item.product.category else ""
+            val unitStr = if (options.showUnit) "Unit: ${item.product.unit}" else ""
+            val sub = listOf(categoryStr, unitStr).filter { it.isNotBlank() }.joinToString(" • ")
+            if (sub.isNotBlank()) {
+                currentY += subPaint.textSize
+                canvas.drawText(sub, centerX, currentY, subPaint)
+                currentY += 4f
+            }
+        }
+
+        // PRICE SECTION: Sale Price + Optional Regular Strikethrough
+        val salePrice = item.product.salePrice
+        val formattedSalePrice = formatPrice(currencySymbol, salePrice)
+
+        if (options.showRegularPrice) {
+            val discountRate = max(options.discountPercent, 5)
+            val originalPrice = salePrice * (1.0 + discountRate / 100.0)
+            val formattedOriginal = formatPrice(currencySymbol, originalPrice)
+
+            val strikePaint = Paint().apply {
+                color = Color.RED
+                textSize = max(min(height * 0.055f, 11f), 7.5f)
+                typeface = Typeface.DEFAULT
+                isAntiAlias = true
+            }
+            val originalText = "Was $formattedOriginal"
+            val origWidth = strikePaint.measureText(originalText)
+            val origX = centerX - (origWidth / 2f)
+
+            currentY += strikePaint.textSize + 2f
+            canvas.drawText(originalText, origX, currentY, strikePaint)
+            // Strike-through line
+            val lineY = currentY - (strikePaint.textSize * 0.35f)
+            canvas.drawLine(origX, lineY, origX + origWidth, lineY, strikePaint)
+            currentY += 3f
+        }
+
+        // Prominent Sale Price
+        val pricePaint = Paint().apply {
+            color = themeColor
+            textSize = max(min(height * 0.13f, 26f), 12f)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            isAntiAlias = true
+        }
+        currentY += pricePaint.textSize + 2f
+        canvas.drawText(formattedSalePrice, centerX, currentY, pricePaint)
+        currentY += 5f
+
+        // MASTER BARCODE SECTION (Guaranteed permanent barcode, rendered crisp)
+        val masterBarcode = item.customBarcode.ifBlank { item.product.barcode }.trim()
+        if (options.showMasterBarcode && masterBarcode.isNotBlank()) {
+            val remainingH = bounds.bottom - currentY - (if (options.showBarcodeNumber) 16f else 6f) - 6f
+            val barcodeH = max(min(remainingH, 36f), 16f)
+            val barcodeW = min(width * 0.78f, 220f)
+
+            val bmp = BarcodeGenerator.generateBarcodeBitmap(
+                content = masterBarcode,
+                type = BarcodeGenerator.detectBarcodeType(masterBarcode),
+                width = 400,
+                height = 100
+            )
+
+            if (bmp != null) {
+                val bLeft = centerX - (barcodeW / 2f)
+                val bDst = RectF(bLeft, currentY, bLeft + barcodeW, currentY + barcodeH)
+                val bPaint = Paint().apply { isFilterBitmap = false }
+                canvas.drawBitmap(bmp, null, bDst, bPaint)
+                currentY += barcodeH + 2f
+            }
+
+            // Human Readable Master Barcode Number
+            if (options.showBarcodeNumber) {
+                val codePaint = Paint().apply {
+                    color = Color.BLACK
+                    textSize = max(min(height * 0.045f, 9f), 6.5f)
+                    typeface = Typeface.MONOSPACE
+                    textAlign = Paint.Align.CENTER
+                    isAntiAlias = true
+                }
+                currentY += codePaint.textSize + 1f
+                canvas.drawText(masterBarcode, centerX, currentY, codePaint)
+            }
+        }
+
+        // Footer Text
+        if (options.footerText.isNotBlank()) {
+            val footerPaint = Paint().apply {
+                color = Color.GRAY
+                textSize = max(min(height * 0.035f, 7.5f), 5.5f)
+                typeface = Typeface.DEFAULT
+                textAlign = Paint.Align.CENTER
+                isAntiAlias = true
+            }
+            val footerY = bounds.bottom - 4f
+            canvas.drawText(options.footerText, centerX, footerY, footerPaint)
+        }
+    }
 }

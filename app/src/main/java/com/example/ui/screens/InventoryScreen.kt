@@ -25,6 +25,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.entity.Product
@@ -518,29 +519,47 @@ fun InventoryScreen(
                             }
 
                             Text(
-                                text = saved.barcode,
+                                text = "Master Barcode: ${saved.barcode}",
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 letterSpacing = 2.sp,
                                 color = Navy900
                             )
+                            Text(
+                                text = "Permanent Master Barcode assigned. Immediately available in POS search, camera scanner, receipts, labels, and promotional materials.",
+                                fontSize = 11.sp,
+                                color = Slate500,
+                                textAlign = TextAlign.Center
+                            )
                         }
                     }
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        val p = recentlySavedProduct
-                        recentlySavedProduct = null
-                        onNavigateToBarcodeLabels()
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Navy900)
-                ) {
-                    Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Print Barcode Label")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            recentlySavedProduct = null
+                            onNavigateToBarcodeLabels()
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFDC2626))
+                    ) {
+                        Icon(Icons.Default.Campaign, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Promo Sign", fontSize = 12.sp)
+                    }
+                    Button(
+                        onClick = {
+                            recentlySavedProduct = null
+                            onNavigateToBarcodeLabels()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Navy900)
+                    ) {
+                        Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Print Labels", fontSize = 12.sp)
+                    }
                 }
             },
             dismissButton = {

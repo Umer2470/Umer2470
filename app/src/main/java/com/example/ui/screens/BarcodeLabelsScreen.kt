@@ -40,6 +40,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.entity.Product
 import com.example.data.entity.StoreSettings
+import com.example.ui.components.PromoMaterialPreviewDialog
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
 import com.example.util.*
@@ -96,6 +97,9 @@ fun BarcodeLabelsScreen(
     }
 
     // Dialogs
+    var activeModuleTab by remember { mutableStateOf(0) } // 0: Barcode & Price Labels, 1: Promotional Material & Signs
+    var promoPrintOptions by remember { mutableStateOf(PromoPrintOptions()) }
+    var showPromoPreviewDialog by remember { mutableStateOf(false) }
     var showPrintPreviewDialog by remember { mutableStateOf(false) }
     var productForBarcodeDialog by remember { mutableStateOf<Product?>(null) }
     var showBulkGenerateDialog by remember { mutableStateOf(false) }
@@ -176,30 +180,58 @@ fun BarcodeLabelsScreen(
                     }
                 },
                 actions = {
-                    // Preview & Print Action Button
-                    Button(
-                        onClick = {
-                            if (selectedProductIds.isEmpty()) {
-                                Toast.makeText(context, "Please select at least 1 product to print", Toast.LENGTH_SHORT).show()
-                            } else {
-                                showPrintPreviewDialog = true
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (selectedProductIds.isNotEmpty()) Emerald600 else Slate600
-                        ),
-                        modifier = Modifier.padding(end = 8.dp).testTag("btn_open_print_preview")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Print,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp).padding(end = 4.dp)
-                        )
-                        Text(
-                            text = if (totalLabelsToPrint > 0) "Print ($totalLabelsToPrint)" else "Print Labels",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp
-                        )
+                    if (activeModuleTab == 0) {
+                        // Barcode & Price Labels Print
+                        Button(
+                            onClick = {
+                                if (selectedProductIds.isEmpty()) {
+                                    Toast.makeText(context, "Please select at least 1 product to print", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showPrintPreviewDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedProductIds.isNotEmpty()) Emerald600 else Slate600
+                            ),
+                            modifier = Modifier.padding(end = 8.dp).testTag("btn_open_print_preview")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Print,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                            )
+                            Text(
+                                text = if (totalLabelsToPrint > 0) "Print ($totalLabelsToPrint)" else "Print Labels",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
+                    } else {
+                        // Promotional Material & Poster Generation
+                        Button(
+                            onClick = {
+                                if (selectedProductIds.isEmpty()) {
+                                    Toast.makeText(context, "Please select at least 1 product for promo signs", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    showPromoPreviewDialog = true
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (selectedProductIds.isNotEmpty()) Color(0xFFDC2626) else Slate600
+                            ),
+                            modifier = Modifier.padding(end = 8.dp).testTag("btn_open_promo_preview")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Campaign,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp).padding(end = 4.dp)
+                            )
+                            Text(
+                                text = if (selectedCount > 0) "Promo Signs ($selectedCount)" else "Create Promo",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -214,6 +246,39 @@ fun BarcodeLabelsScreen(
                 .padding(innerPadding)
                 .background(Slate50)
         ) {
+            // Module Mode Tab Switcher: Labels vs Promotional Material
+            TabRow(
+                selectedTabIndex = activeModuleTab,
+                containerColor = Navy900,
+                contentColor = Color.White
+            ) {
+                Tab(
+                    selected = activeModuleTab == 0,
+                    onClick = { activeModuleTab = 0 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.QrCode, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Barcode & Price Labels", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    },
+                    selectedContentColor = Emerald400,
+                    unselectedContentColor = Slate300
+                )
+                Tab(
+                    selected = activeModuleTab == 1,
+                    onClick = { activeModuleTab = 1 },
+                    text = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Campaign, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Promotional Material & Signs", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                    },
+                    selectedContentColor = Color(0xFFF87171),
+                    unselectedContentColor = Slate300
+                )
+            }
             // Stats & Quick Actions Banner
             Surface(
                 color = Color.White,
@@ -585,6 +650,10 @@ fun BarcodeLabelsScreen(
                                         }
                                     }
                                 }
+                            },
+                            onPromoSingle = {
+                                selectedProductIds = setOf(product.id)
+                                showPromoPreviewDialog = true
                             }
                         )
                     }
@@ -681,6 +750,64 @@ fun BarcodeLabelsScreen(
             }
         )
     }
+
+    // Promotional Material & Shelf Talkers Preview Dialog
+    if (showPromoPreviewDialog) {
+        val selectedItems = remember(selectedProductIds, productCopiesMap, products) {
+            selectedProductIds.mapNotNull { id ->
+                val p = products.find { it.id == id } ?: return@mapNotNull null
+                ProductLabelItem(
+                    product = p,
+                    copies = productCopiesMap[id] ?: 1,
+                    customBarcode = p.barcode,
+                    barcodeType = BarcodeGenerator.detectBarcodeType(p.barcode)
+                )
+            }
+        }
+
+        PromoMaterialPreviewDialog(
+            items = selectedItems,
+            settings = effectiveSettings,
+            initialOptions = promoPrintOptions,
+            onDismiss = { showPromoPreviewDialog = false },
+            onOptionsChanged = { promoPrintOptions = it },
+            onPrint = { optionsToUse ->
+                coroutineScope.launch(Dispatchers.IO) {
+                    val pdfFile = BarcodeLabelPdfGenerator.generatePromoMaterialPdf(
+                        context = context,
+                        items = selectedItems,
+                        settings = effectiveSettings,
+                        options = optionsToUse
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (pdfFile != null) {
+                            BarcodeLabelPdfGenerator.printPdf(context, pdfFile, "PromoMaterial")
+                            showPromoPreviewDialog = false
+                        } else {
+                            Toast.makeText(context, "Failed to generate promotional PDF", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            },
+            onShare = { optionsToUse ->
+                coroutineScope.launch(Dispatchers.IO) {
+                    val pdfFile = BarcodeLabelPdfGenerator.generatePromoMaterialPdf(
+                        context = context,
+                        items = selectedItems,
+                        settings = effectiveSettings,
+                        options = optionsToUse
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (pdfFile != null) {
+                            BarcodeLabelPdfGenerator.sharePdf(context, pdfFile)
+                        } else {
+                            Toast.makeText(context, "Failed to generate promotional PDF for sharing", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }
+            }
+        )
+    }
 }
 
 /**
@@ -695,7 +822,8 @@ fun ProductBarcodeCard(
     onToggleSelection: () -> Unit,
     onCopiesChanged: (Int) -> Unit,
     onEditBarcode: () -> Unit,
-    onPrintSingle: () -> Unit
+    onPrintSingle: () -> Unit,
+    onPromoSingle: () -> Unit = {}
 ) {
     Card(
         shape = RoundedCornerShape(12.dp),
@@ -769,6 +897,18 @@ fun ProductBarcodeCard(
                         imageVector = Icons.Default.Print,
                         contentDescription = "Print Label",
                         tint = Navy700
+                    )
+                }
+
+                // Quick Single Promo Sign
+                IconButton(
+                    onClick = onPromoSingle,
+                    modifier = Modifier.testTag("btn_promo_single_${product.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Campaign,
+                        contentDescription = "Create Promo Sign",
+                        tint = Color(0xFFDC2626)
                     )
                 }
             }
@@ -1198,7 +1338,23 @@ fun BulkBarcodeGenerateDialog(
                             isProcessing = true
                             val generatedBarcodes = existingBarcodes.toMutableSet()
                             val updatedList = missingProducts.map { prod ->
-                                val code = BarcodeGenerator.autoGenerateBarcode(selectedType, prod.id, generatedBarcodes)
+                                var nextSeq = 1L
+                                for (b in generatedBarcodes) {
+                                    if (b.startsWith("200") && b.length == 13) {
+                                        val s = b.substring(3, 12).toLongOrNull() ?: 0L
+                                        if (s >= nextSeq) nextSeq = s + 1
+                                    }
+                                }
+                                val code = if (selectedType == BarcodeType.EAN_13 || selectedType == BarcodeType.CODE_128) {
+                                    var cand: String
+                                    do {
+                                        cand = BarcodeGenerator.formatMasterBarcode(nextSeq)
+                                        nextSeq++
+                                    } while (generatedBarcodes.contains(cand))
+                                    cand
+                                } else {
+                                    BarcodeGenerator.autoGenerateBarcode(selectedType, prod.id, generatedBarcodes)
+                                }
                                 generatedBarcodes.add(code)
                                 prod.copy(barcode = code, updatedAt = System.currentTimeMillis())
                             }
