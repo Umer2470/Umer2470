@@ -35,6 +35,7 @@ import com.example.data.api.security.OwnerSecurityManager
 import com.example.data.entity.PaymentQrConfig
 import com.example.data.entity.StoreSettings
 import com.example.ui.components.AppHeader
+import com.example.ui.components.DashboardAppearanceSettingsSection
 import com.example.ui.components.PaymentQrSettingsSection
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.ShopLogoAvatar
@@ -586,7 +587,15 @@ fun SettingsScreen(
                 }
             }
 
-            // 4. Store & Business Configuration
+            // 4. Dashboard Appearance (Banner & Images Customization)
+            DashboardAppearanceSettingsSection(
+                storeSettings = storeSettings,
+                onSaveSettings = { updated ->
+                    viewModel.updateStoreSettings(updated)
+                }
+            )
+
+            // 5. Store & Business Configuration
             SectionHeader(title = "Store Business & Billing Details", subtitle = "Official Name, Address, Tax & Receipt Settings")
 
             Card(

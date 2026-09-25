@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
         MachinePunchLog::class,
         InvoiceSequence::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -351,6 +351,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN dashboardBannerUri TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN dashboardSmallImageUri TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN dashboardBannerBgColor TEXT NOT NULL DEFAULT 'Navy'")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN showDashboardBannerText INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN showDashboardSmallImage INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN dashboardBannerHeading TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN dashboardBannerSubtitle TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN dashboardBannerDescription TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE store_settings ADD COLUMN dashboardBannerActionText TEXT NOT NULL DEFAULT 'High-Speed Billing & Inventory'")
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -358,7 +372,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "sentry_store_pos_database.db"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
                     .fallbackToDestructiveMigration(false)
                     .addCallback(object : Callback() {
                         override fun onCreate(db: SupportSQLiteDatabase) {

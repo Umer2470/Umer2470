@@ -41,7 +41,16 @@ data class StoreSettings(
     val fbrEnvironment: String = "Sandbox", // Sandbox or Live
     val fbrApiAuthToken: String = "",
     val fbrDefaultTaxRate: Double = 0.0,
-    val fbrTaxMode: String = "Exclusive" // Exclusive or Inclusive
+    val fbrTaxMode: String = "Exclusive", // Exclusive or Inclusive
+    val dashboardBannerUri: String? = null,
+    val dashboardSmallImageUri: String? = null,
+    val dashboardBannerBgColor: String = "Navy",
+    val showDashboardBannerText: Boolean = true,
+    val showDashboardSmallImage: Boolean = true,
+    val dashboardBannerHeading: String = "",
+    val dashboardBannerSubtitle: String = "",
+    val dashboardBannerDescription: String = "",
+    val dashboardBannerActionText: String = "High-Speed Billing & Inventory"
 )
 
 @JsonClass(generateAdapter = true)

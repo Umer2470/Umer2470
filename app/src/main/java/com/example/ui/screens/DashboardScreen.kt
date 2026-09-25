@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.graphics.BitmapFactory
+import java.io.File
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +20,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
@@ -231,13 +234,56 @@ fun DashboardScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // VIP POS Commercial Showcase Card
+                // VIP POS Commercial Showcase Card (Configurable Banner & Branding)
+                val bannerCardBgColor = remember(storeSettings?.dashboardBannerBgColor) {
+                    when (storeSettings?.dashboardBannerBgColor?.lowercase()?.trim()) {
+                        "black" -> Color.Black
+                        "white" -> Color.White
+                        "light gray", "gray", "lightgray" -> Color(0xFFF1F5F9)
+                        null, "", "navy", "dark navy" -> Navy900
+                        else -> try {
+                            Color(android.graphics.Color.parseColor(storeSettings?.dashboardBannerBgColor))
+                        } catch (e: Exception) {
+                            Navy900
+                        }
+                    }
+                }
+
+                val customBannerBitmap = remember(storeSettings?.dashboardBannerUri) {
+                    if (!storeSettings?.dashboardBannerUri.isNullOrBlank()) {
+                        try {
+                            val f = File(storeSettings!!.dashboardBannerUri!!)
+                            if (f.exists() && f.length() > 0) {
+                                BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap()
+                            } else null
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } else null
+                }
+
+                val customSmallBitmap = remember(storeSettings?.dashboardSmallImageUri) {
+                    if (!storeSettings?.dashboardSmallImageUri.isNullOrBlank()) {
+                        try {
+                            val f = File(storeSettings!!.dashboardSmallImageUri!!)
+                            if (f.exists() && f.length() > 0) {
+                                BitmapFactory.decodeFile(f.absolutePath)?.asImageBitmap()
+                            } else null
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } else null
+                }
+
+                val showBannerText = storeSettings?.showDashboardBannerText ?: true
+                val showSmallImg = storeSettings?.showDashboardSmallImage ?: true
+
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("vip_pos_showcase_banner"),
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Navy900),
+                    colors = CardDefaults.cardColors(containerColor = bannerCardBgColor),
                     elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                 ) {
                     Column(
@@ -247,81 +293,137 @@ fun DashboardScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(160.dp)
+                                .background(bannerCardBgColor)
                         ) {
-                            Image(
-                                painter = painterResource(id = R.drawable.sentry_store_banner_1787989285469),
-                                contentDescription = "SENTRY STORE Commercial Solution",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
-                            )
-                            // Elegant Dark-Gold Gradient Overlay
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(
-                                        Brush.verticalGradient(
-                                            colors = listOf(
-                                                Color.Transparent,
-                                                Navy900.copy(alpha = 0.65f),
-                                                Navy900.copy(alpha = 0.95f)
+                            // Main Background / Banner Image
+                            if (customBannerBitmap != null) {
+                                Image(
+                                    bitmap = customBannerBitmap,
+                                    contentDescription = "Dashboard Custom Commercial Banner",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                                )
+                            } else {
+                                Image(
+                                    painter = painterResource(id = R.drawable.sentry_store_banner_1787989285469),
+                                    contentDescription = "SENTRY STORE Commercial Solution",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                                )
+                            }
+
+                            // Dark Gradient Overlay (applied when text is shown for legibility)
+                            if (showBannerText) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color.Transparent,
+                                                    bannerCardBgColor.copy(alpha = 0.65f),
+                                                    bannerCardBgColor.copy(alpha = 0.95f)
+                                                )
                                             )
                                         )
-                                    )
-                            )
-                            // Overlay Badges & Tagline
-                            Row(
-                                modifier = Modifier
-                                    .align(Alignment.BottomStart)
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                ShopLogoAvatar(
-                                    logoUri = storeSettings?.logoUri,
-                                    size = 46.dp,
-                                    shape = RoundedCornerShape(8.dp),
-                                    borderColor = Gold400,
-                                    borderWidth = 1.5.dp
                                 )
-                                Column {
-                                    Surface(
-                                        color = Gold500,
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "${storeSettings?.posBrandName?.ifBlank { "SENTRY STORE POS" } ?: "SENTRY STORE POS"} • ${storeSettings?.tagline?.ifBlank { "Professional Retail" } ?: "Professional Retail"}",
-                                            fontWeight = FontWeight.Black,
-                                            fontSize = 11.sp,
-                                            color = Navy900,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                                        )
+                            }
+
+                            // Overlay Badges & Tagline
+                            if (showBannerText || showSmallImg) {
+                                Row(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomStart)
+                                        .padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    if (showSmallImg) {
+                                        if (customSmallBitmap != null) {
+                                            Image(
+                                                bitmap = customSmallBitmap,
+                                                contentDescription = "Custom Small Brand Image",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .border(1.5.dp, Gold400, RoundedCornerShape(8.dp))
+                                                    .testTag("dashboard_custom_small_image")
+                                            )
+                                        } else if (!storeSettings?.logoUri.isNullOrBlank()) {
+                                            ShopLogoAvatar(
+                                                logoUri = storeSettings?.logoUri,
+                                                size = 46.dp,
+                                                shape = RoundedCornerShape(8.dp),
+                                                borderColor = Gold400,
+                                                borderWidth = 1.5.dp
+                                            )
+                                        } else {
+                                            Image(
+                                                painter = painterResource(id = R.drawable.sentry_store_logo_1787989266987),
+                                                contentDescription = "Store Logo",
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier
+                                                    .size(46.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .border(1.5.dp, Gold400, RoundedCornerShape(8.dp))
+                                                    .testTag("dashboard_default_small_image")
+                                            )
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.height(3.dp))
-                                    Text(
-                                        text = storeSettings?.brandDescription?.ifBlank { "Hardware, Paint & Multi-Category Retail POS" } ?: "Hardware, Paint & Multi-Category Retail POS",
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
+
+                                    if (showBannerText) {
+                                        val heading = storeSettings?.dashboardBannerHeading?.ifBlank { null }
+                                            ?: storeSettings?.posBrandName?.ifBlank { "SENTRY STORE POS" } ?: "SENTRY STORE POS"
+                                        val sub = storeSettings?.dashboardBannerSubtitle?.ifBlank { null }
+                                            ?: storeSettings?.tagline?.ifBlank { "Professional Retail" } ?: "Professional Retail"
+                                        val desc = storeSettings?.dashboardBannerDescription?.ifBlank { null }
+                                            ?: storeSettings?.brandDescription?.ifBlank { "Hardware, Paint & Multi-Category Retail POS" } ?: "Hardware, Paint & Multi-Category Retail POS"
+
+                                        Column {
+                                            Surface(
+                                                color = Gold500,
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "$heading • $sub",
+                                                    fontWeight = FontWeight.Black,
+                                                    fontSize = 11.sp,
+                                                    color = Navy900,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.height(3.dp))
+                                            Text(
+                                                text = desc,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (bannerCardBgColor == Color.White) Navy900 else Color.White
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
 
                         // Action shortcut row under banner
+                        val isLightBg = bannerCardBgColor == Color.White || bannerCardBgColor == Color(0xFFF1F5F9)
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Navy900)
+                                .background(bannerCardBgColor)
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "High-Speed Billing & Inventory",
+                                text = storeSettings?.dashboardBannerActionText?.ifBlank { "High-Speed Billing & Inventory" } ?: "High-Speed Billing & Inventory",
                                 fontSize = 11.5.sp,
-                                color = Slate300,
+                                color = if (isLightBg) Navy900 else Slate300,
                                 fontWeight = FontWeight.Medium
                             )
 
