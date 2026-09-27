@@ -50,6 +50,27 @@ class OwnerAndScannerVerificationTest {
         assertFalse("Blank PIN should be rejected", "" == savedPin)
     }
 
+    @Test
+    fun testOwnerBootstrapCredentialLifecycle() {
+        val ownerSecurityManager = com.example.data.api.security.OwnerSecurityManager.getInstance(context)
+        ownerSecurityManager.resetForTesting()
+
+        // 1. Fresh install: bootstrap 2194903 is accepted
+        assertTrue("Bootstrap credential 2194903 must authenticate initially", ownerSecurityManager.verifyCredential("2194903"))
+        assertFalse("Invalid credential must be rejected", ownerSecurityManager.verifyCredential("9999"))
+
+        // 2. Cannot save 2194903 as permanent password
+        assertFalse("Cannot use bootstrap as permanent password", ownerSecurityManager.setupOwnerSecurity("2194903"))
+
+        // 3. Save new permanent password
+        assertTrue("Setting valid custom password must succeed", ownerSecurityManager.setupOwnerSecurity("Secr3tPIN"))
+        assertTrue("Owner is now configured", ownerSecurityManager.isOwnerSecurityConfigured())
+
+        // 4. Permanent password works, bootstrap 2194903 is permanently deactivated
+        assertTrue("Configured password authenticates", ownerSecurityManager.verifyCredential("Secr3tPIN"))
+        assertFalse("Bootstrap 2194903 MUST NOT work after custom password is set", ownerSecurityManager.verifyCredential("2194903"))
+    }
+
     // ==========================================
     // 2. LICENSE GENERATION & MEMBERSHIP PLANS
     // ==========================================

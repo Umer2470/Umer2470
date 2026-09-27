@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -69,6 +70,14 @@ fun DashboardScreen(
     val topCategories by viewModel.topCategories.collectAsState()
     val activeUser by viewModel.activeUser.collectAsState()
     val allUsers by viewModel.users.collectAsState()
+    val branches by viewModel.branches.collectAsState()
+    var showStoreSelectorDialog by remember { mutableStateOf(false) }
+
+    val activeBranchName = remember(branches, storeSettings?.activeBranchId) {
+        branches.firstOrNull { it.id == storeSettings?.activeBranchId }?.name
+            ?: storeSettings?.storeName?.ifBlank { "Other Store" }
+            ?: "Other Store"
+    }
 
     val currency = storeSettings?.currencySymbol ?: "Rs"
     val totalRevenue = remember(sales) { sales.sumOf { it.netAmount } }
@@ -119,34 +128,40 @@ fun DashboardScreen(
                     title = {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             ShopLogoAvatar(
                                 logoUri = storeSettings?.logoUri,
-                                size = 38.dp,
+                                size = 36.dp,
                                 shape = RoundedCornerShape(8.dp),
                                 borderColor = Gold400,
                                 borderWidth = 1.dp
                             )
                             Column {
-                                Text(
-                                    text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "SENTRY STORE",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     Text(
-                                        text = (storeSettings?.tagline ?: "Professional Retail & Business Management") + " • ",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = Gold400
+                                        text = storeSettings?.appDisplayName?.ifBlank { storeSettings?.storeName } ?: "SENTRY STORE",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        maxLines = 1
                                     )
-                                    Text(
-                                        text = if (connectionState == ConnectionState.CONNECTED) "Online" else "Offline Safe",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = if (connectionState == ConnectionState.CONNECTED) Emerald500 else Gold400
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .clip(CircleShape)
+                                            .background(if (connectionState == ConnectionState.CONNECTED) Emerald400 else Gold400)
                                     )
                                 }
+                                Text(
+                                    text = if (connectionState == ConnectionState.CONNECTED) "Live • Online" else "Live • Offline Safe",
+                                    fontSize = 10.sp,
+                                    color = if (connectionState == ConnectionState.CONNECTED) Emerald300 else Gold300,
+                                    fontWeight = FontWeight.Medium
+                                )
                             }
                         }
                     },
@@ -159,7 +174,67 @@ fun DashboardScreen(
                         }
                     },
                     actions = {
+                        // Live Clock with Date & Time
                         LiveClockBadge(compact = true)
+
+                        // Other Store Selector (beside Live Time section)
+                        Surface(
+                            onClick = { showStoreSelectorDialog = true },
+                            color = Navy800,
+                            shape = RoundedCornerShape(8.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Gold500.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .padding(horizontal = 2.dp)
+                                .testTag("dashboard_other_store_button")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 5.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Storefront,
+                                    contentDescription = null,
+                                    tint = Gold400,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Text(
+                                    text = activeBranchName,
+                                    fontSize = 11.sp,
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
+                                Icon(
+                                    imageVector = Icons.Default.ArrowDropDown,
+                                    contentDescription = "Switch Store",
+                                    tint = Gold400,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
+                        }
+
+                        // Activation / Security Icon
+                        IconButton(
+                            onClick = { onNavigate("activation") },
+                            modifier = Modifier.testTag("dashboard_activation_button")
+                        ) {
+                            Icon(
+                                imageVector = if (activationState == AppActivationManager.STATUS_ACTIVATED || activationState == AppActivationManager.STATUS_OFFLINE_ACTIVATED) {
+                                    Icons.Default.Verified
+                                } else {
+                                    Icons.Default.VpnKey
+                                },
+                                contentDescription = "Activation & License",
+                                tint = if (activationState == AppActivationManager.STATUS_ACTIVATED || activationState == AppActivationManager.STATUS_OFFLINE_ACTIVATED) {
+                                    Gold400
+                                } else {
+                                    Rose400
+                                }
+                            )
+                        }
+
+                        // Settings Icon
                         IconButton(
                             onClick = { onNavigate("settings") },
                             modifier = Modifier.testTag("dashboard_settings_button")
@@ -182,59 +257,9 @@ fun DashboardScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
                     .verticalScroll(rememberScrollState())
-                    .padding(16.dp)
+                    .padding(horizontal = 14.dp, vertical = 6.dp)
             ) {
-                // License status banner
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onNavigate("activation") }
-                        .testTag("dashboard_license_banner"),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (activationState == AppActivationManager.STATUS_ACTIVATED || activationState == AppActivationManager.STATUS_OFFLINE_ACTIVATED) Navy900 else Rose600
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (activationState == AppActivationManager.STATUS_ACTIVATED) Icons.Default.Verified else Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = Color.White,
-                                modifier = Modifier.size(28.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = if (activationState == AppActivationManager.STATUS_ACTIVATED) "Licensed Commercial POS" else "Activation Pending",
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White,
-                                    fontSize = 15.sp
-                                )
-                                Text(
-                                    text = "Device: ${viewModel.identityManager.getInstallationId()} • SentryStore.pk",
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    fontSize = 12.sp
-                                )
-                            }
-                        }
-                        Icon(
-                            imageVector = Icons.Default.ChevronRight,
-                            contentDescription = null,
-                            tint = Color.White
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // VIP POS Commercial Showcase Card (Configurable Banner & Branding)
+                // VIP POS Commercial Showcase Card (Configurable Banner & Branding) begins immediately below the header
                 val bannerCardBgColor = remember(storeSettings?.dashboardBannerBgColor) {
                     when (storeSettings?.dashboardBannerBgColor?.lowercase()?.trim()) {
                         "black" -> Color.Black
@@ -445,7 +470,7 @@ fun DashboardScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // 1. STORE MODULE / STORE MALL (Directly below Header / License status)
                 SectionHeader(
@@ -691,6 +716,151 @@ fun DashboardScreen(
                     }
                 }
             }
+        }
+
+        if (showStoreSelectorDialog) {
+            val currentBranchId = storeSettings?.activeBranchId ?: 1L
+
+            AlertDialog(
+                onDismissRequest = { showStoreSelectorDialog = false },
+                title = {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Storefront, contentDescription = null, tint = Gold600)
+                        Text(
+                            text = "Select Active Store Context",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            color = Navy900
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Switch between store outlets to manage store-specific inventory, billing context, and settings:",
+                            fontSize = 12.sp,
+                            color = Slate600
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        if (branches.isEmpty()) {
+                            Surface(
+                                color = Emerald50,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column {
+                                        Text(
+                                            text = storeSettings?.storeName ?: "SENTRY STORE (Main)",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = Navy900
+                                        )
+                                        Text(
+                                            text = "Active Primary Store",
+                                            fontSize = 11.sp,
+                                            color = Emerald700
+                                        )
+                                    }
+                                    Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Emerald600)
+                                }
+                            }
+                        } else {
+                            branches.forEach { branch ->
+                                val isSelected = branch.id == currentBranchId
+                                Surface(
+                                    onClick = {
+                                        viewModel.switchActiveBranch(branch) {
+                                            showStoreSelectorDialog = false
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) Emerald50 else Slate50,
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        width = if (isSelected) 2.dp else 1.dp,
+                                        color = if (isSelected) Emerald600 else Slate300
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("store_branch_option_${branch.id}")
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = branch.name,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 14.sp,
+                                                    color = Navy900
+                                                )
+                                                if (branch.isHeadquarters) {
+                                                    Surface(
+                                                        color = Gold500,
+                                                        shape = RoundedCornerShape(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "HQ",
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Black,
+                                                            color = Navy900,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            if (branch.location.isNotBlank()) {
+                                                Text(text = "Location: ${branch.location}", fontSize = 11.sp, color = Slate600)
+                                            }
+                                            if (branch.phone.isNotBlank()) {
+                                                Text(text = "Phone: ${branch.phone}", fontSize = 11.sp, color = Slate500)
+                                            }
+                                        }
+                                        if (isSelected) {
+                                            Icon(Icons.Default.CheckCircle, contentDescription = "Active", tint = Emerald600)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showStoreSelectorDialog = false }) {
+                        Text("Close")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(
+                        onClick = {
+                            showStoreSelectorDialog = false
+                            onNavigate("store_management")
+                        }
+                    ) {
+                        Icon(Icons.Default.AddBusiness, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Manage Stores")
+                    }
+                }
+            )
         }
     }
 }

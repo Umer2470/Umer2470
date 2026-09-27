@@ -1629,6 +1629,30 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun switchActiveBranch(branch: StoreBranch, onSuccess: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = storeSettingsDao.getSettings() ?: StoreSettings()
+            val updated = current.copy(
+                activeBranchId = branch.id,
+                storeName = if (branch.isHeadquarters) current.storeName else branch.name,
+                address = if (branch.location.isNotBlank()) branch.location else current.address,
+                phone = if (branch.phone.isNotBlank()) branch.phone else current.phone
+            )
+            storeSettingsDao.insertOrUpdateSettings(updated)
+            activityLogDao.insertLog(
+                ActivityLog(
+                    action = "Switch Store Branch",
+                    module = "Store Management",
+                    details = "Active store context switched to '${branch.name}' (Branch #${branch.id})",
+                    performedBy = _activeCashierName.value.ifBlank { "Admin" }
+                )
+            )
+            withContext(Dispatchers.Main) {
+                onSuccess()
+            }
+        }
+    }
+
     private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "System") ?: "System")
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
@@ -2134,6 +2158,14 @@ class StoreViewModel(application: Application) : AndroidViewModel(application) {
     // Owner Security Authentication - strictly isolated to Dedicated Owner PIN/Password
     fun isOwnerSecurityConfigured(): Boolean {
         return ownerSecurityManager.isOwnerSecurityConfigured()
+    }
+
+    fun isBootstrapAllowed(): Boolean {
+        return ownerSecurityManager.isBootstrapAllowed()
+    }
+
+    fun verifyBootstrapPassword(password: String): Boolean {
+        return ownerSecurityManager.verifyBootstrapPassword(password)
     }
 
     fun setupOwnerSecurity(pin: String): Boolean {

@@ -56,8 +56,11 @@ enum class UserRole(
                 // Inventory, Purchases, Suppliers, Daily Closing, Barcode & Labels are accessible to Supervisor and above
                 "inventory", "purchases", "suppliers", "closing", "barcode_labels" -> userRole.level >= SUPERVISOR.level
 
-                // Reports, Cashier Management, General Settings, Recycle Bin, Setup are accessible to Admin and above
-                "reports", "cashier_management", "settings", "recycle_bin", "setup", "logs", "store_management" -> userRole.level >= ADMIN.level
+                // Reports, Cashier Management, General Settings, Recycle Bin, Setup, Printers, Backups are accessible to Admin and above
+                "reports", "cashier_management", "settings", "recycle_bin", "setup", "logs", "store_management",
+                "receipt_settings", "pdf_settings", "bluetooth_printer", "network_printer", "backup_recovery" -> userRole.level >= ADMIN.level
+
+                "about_support" -> true
 
                 // User & Security Management, Store Access Management, Owner Control Center, License Activation, Developer Hub require Super Admin
                 "users", "access_management", "owner_control_center", "activation", "developer_hub" -> userRole == SUPER_ADMIN

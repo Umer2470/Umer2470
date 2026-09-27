@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -33,6 +34,7 @@ import com.example.data.entity.Customer
 import com.example.data.entity.Product
 import com.example.data.entity.Sale
 import com.example.data.entity.SaleItem
+import com.example.data.entity.StoreSettings
 import com.example.ui.components.CameraBarcodeScannerView
 import com.example.ui.components.LiveClockHeaderWidget
 import com.example.ui.components.ShopLogoAvatar
@@ -41,6 +43,8 @@ import com.example.ui.theme.*
 import com.example.ui.viewmodel.CartItem
 import com.example.ui.viewmodel.HeldCart
 import com.example.ui.viewmodel.StoreViewModel
+import com.example.util.PosSettingsManager
+import kotlinx.coroutines.launch
 
 enum class PosTab {
     CATALOG,
@@ -70,6 +74,10 @@ fun SalesPosScreen(
     val users by viewModel.users.collectAsState()
     val storeSettings by viewModel.storeSettings.collectAsState()
     val activePaymentQr by viewModel.activePaymentQr.collectAsState()
+
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val posSettingsManager = remember(context) { PosSettingsManager.getInstance(context) }
 
     val subtotal = remember(cart) { cart.sumOf { it.totalPrice } }
     val netAmount = remember(subtotal, discountAmount) { (subtotal - discountAmount).coerceAtLeast(0.0) }
@@ -1019,6 +1027,19 @@ fun SalesPosScreen(
                                 showCheckoutDialog = false
                                 showReceiptDialog = true
                                 successToast = "Sale completed! Invoice ${sale.invoiceNumber}"
+
+                                if (posSettingsManager.isAutoPrintReceiptEnabled()) {
+                                    coroutineScope.launch {
+                                        val (success, msg) = posSettingsManager.printSaleReceipt(
+                                            sale = sale,
+                                            items = items,
+                                            settings = storeSettings ?: StoreSettings()
+                                        )
+                                        if (!success) {
+                                            errorMessage = "Auto-print failed: $msg (Sale is saved. You can retry printing manually)"
+                                        }
+                                    }
+                                }
                             },
                             onError = { err ->
                                 isProcessingCheckout = false

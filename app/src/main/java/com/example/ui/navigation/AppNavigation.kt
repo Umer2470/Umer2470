@@ -54,6 +54,11 @@ sealed class Screen(val route: String) {
     object RecycleBin : Screen("recycle_bin")
     object Logs : Screen("logs")
     object Settings : Screen("settings")
+    object ReceiptSettings : Screen("receipt_settings")
+    object InvoicePdfSettings : Screen("pdf_settings")
+    object BluetoothPrinter : Screen("bluetooth_printer")
+    object NetworkPrinter : Screen("network_printer")
+    object AboutSupport : Screen("about_support")
     object DeveloperHub : Screen("developer_hub")
     object BackupRecovery : Screen("backup_recovery")
 }
@@ -566,6 +571,36 @@ fun AppNavigation(
                     SettingsScreen(
                         viewModel = viewModel,
                         onNavigate = { route -> navController.navigate(route) },
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.ReceiptSettings.route) {
+                    ReceiptSettingsScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.InvoicePdfSettings.route) {
+                    InvoicePdfSettingsScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.BluetoothPrinter.route) {
+                    BluetoothPrinterScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.NetworkPrinter.route) {
+                    NetworkPrinterScreen(
+                        viewModel = viewModel,
+                        onNavigateBack = { navController.popBackStack() }
+                    )
+                }
+                composable(Screen.AboutSupport.route) {
+                    AboutSupportScreen(
+                        viewModel = viewModel,
                         onNavigateBack = { navController.popBackStack() }
                     )
                 }

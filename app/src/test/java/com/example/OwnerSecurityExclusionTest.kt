@@ -22,6 +22,7 @@ class OwnerSecurityExclusionTest {
     fun setup() {
         context = ApplicationProvider.getApplicationContext()
         ownerSecurityManager = OwnerSecurityManager.getInstance(context)
+        ownerSecurityManager.resetForTesting()
     }
 
     @Test
@@ -41,8 +42,7 @@ class OwnerSecurityExclusionTest {
     @Test
     fun testFirstTimeOwnerSecuritySetupFlow() {
         // Reset state for isolation
-        context.getSharedPreferences("sentry_store_owner_security", Context.MODE_PRIVATE)
-            .edit().remove("key_owner_pin_hash").putBoolean("key_is_configured", false).apply()
+        ownerSecurityManager.resetForTesting()
 
         assertFalse("Owner Security must not be configured initially without setup", ownerSecurityManager.isOwnerSecurityConfigured())
 
@@ -61,6 +61,38 @@ class OwnerSecurityExclusionTest {
         // Verification of established PIN
         assertTrue("Configured Owner PIN 8765 must be accepted", ownerSecurityManager.verifyCredential("8765"))
         assertFalse("9999 must still be rejected", ownerSecurityManager.verifyCredential("9999"))
+        assertFalse("Bootstrap password 2194903 must be permanently rejected once custom password is saved", ownerSecurityManager.verifyCredential("2194903"))
+    }
+
+    @Test
+    fun testBootstrapPasswordAuthenticationAndPermanentRevocation() {
+        ownerSecurityManager.resetForTesting()
+
+        // 1. Initial State: Unconfigured
+        assertFalse("Owner Security should not be configured initially", ownerSecurityManager.isOwnerSecurityConfigured())
+        assertTrue("Bootstrap password should be allowed on fresh unconfigured setup", ownerSecurityManager.isBootstrapAllowed())
+
+        // 2. Initial Setup Password 2194903 authenticates
+        assertTrue("Bootstrap password 2194903 must authenticate initially", ownerSecurityManager.verifyBootstrapPassword("2194903"))
+        assertTrue("verifyCredential with 2194903 must succeed on fresh installation", ownerSecurityManager.verifyCredential("2194903"))
+
+        // Wrong passwords rejected
+        assertFalse("Wrong password must be rejected", ownerSecurityManager.verifyBootstrapPassword("wrong123"))
+        assertFalse("Arbitrary code must be rejected", ownerSecurityManager.verifyCredential("9999"))
+
+        // 3. Cannot reuse 2194903 as permanent password
+        assertFalse("Cannot reuse bootstrap code 2194903 as permanent password", ownerSecurityManager.setupOwnerSecurity("2194903"))
+
+        // 4. Save custom permanent password
+        val saved = ownerSecurityManager.setupOwnerSecurity("MySecretPass99")
+        assertTrue("Saving custom password should succeed", saved)
+        assertTrue("Owner Security must now be configured", ownerSecurityManager.isOwnerSecurityConfigured())
+        assertFalse("Bootstrap must now be permanently disallowed", ownerSecurityManager.isBootstrapAllowed())
+
+        // 5. Custom password works, bootstrap password MUST NOT work
+        assertTrue("Custom password authenticates successfully", ownerSecurityManager.verifyCredential("MySecretPass99"))
+        assertFalse("Bootstrap password 2194903 MUST NOT work after custom password is set", ownerSecurityManager.verifyCredential("2194903"))
+        assertFalse("verifyBootstrapPassword MUST return false once revoked", ownerSecurityManager.verifyBootstrapPassword("2194903"))
     }
 
     @Test

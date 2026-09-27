@@ -83,6 +83,10 @@ fun OwnerControlCenterScreen(
 
     // First-Time Setup State
     val isOwnerConfigured = remember(isUnlocked, toastMessage) { viewModel.isOwnerSecurityConfigured() }
+    var isBootstrapAuthenticated by remember { mutableStateOf(false) }
+    var bootstrapPasswordInput by remember { mutableStateOf("") }
+    var bootstrapError by remember { mutableStateOf<String?>(null) }
+    var isBootstrapPasswordVisible by remember { mutableStateOf(false) }
     var setupOwnerPin by remember { mutableStateOf("") }
     var setupOwnerConfirmPin by remember { mutableStateOf("") }
     var setupOwnerError by remember { mutableStateOf<String?>(null) }
@@ -188,138 +192,244 @@ fun OwnerControlCenterScreen(
                     verticalArrangement = Arrangement.Center
                 ) {
                     if (!isOwnerConfigured) {
-                        // FIRST-TIME OWNER SECURITY SETUP FLOW
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("owner_setup_card"),
-                            shape = RoundedCornerShape(16.dp),
-                            colors = CardDefaults.cardColors(containerColor = Color.White),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                        ) {
-                            Column(
+                        if (!isBootstrapAuthenticated) {
+                            // STEP 1: FIRST-TIME BOOTSTRAP AUTHENTICATION GATE
+                            Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                                    .testTag("owner_bootstrap_card"),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
                             ) {
-                                Box(
+                                Column(
                                     modifier = Modifier
-                                        .size(64.dp)
-                                        .clip(CircleShape)
-                                        .background(Gold100),
-                                    contentAlignment = Alignment.Center
+                                        .fillMaxWidth()
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
-                                    Icon(
-                                        Icons.Default.AdminPanelSettings,
-                                        contentDescription = null,
-                                        tint = Gold600,
-                                        modifier = Modifier.size(36.dp)
-                                    )
-                                }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(64.dp)
+                                            .clip(CircleShape)
+                                            .background(Gold100),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.AdminPanelSettings,
+                                            contentDescription = null,
+                                            tint = Gold600,
+                                            modifier = Modifier.size(36.dp)
+                                        )
+                                    }
 
-                                Text(
-                                    text = "CREATE OWNER PASSWORD",
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 18.sp,
-                                    color = Navy900,
-                                    textAlign = TextAlign.Center
-                                )
-
-                                Text(
-                                    text = "No Owner Password has ever been configured. As store proprietor or developer, establish your secret Owner Password to secure this control center.",
-                                    fontSize = 12.sp,
-                                    color = Navy500,
-                                    textAlign = TextAlign.Center
-                                )
-
-                                OutlinedTextField(
-                                    value = setupOwnerPin,
-                                    onValueChange = {
-                                        setupOwnerPin = it
-                                        setupOwnerError = null
-                                    },
-                                    label = { Text("New Owner Password") },
-                                    visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                    trailingIcon = {
-                                        IconButton(onClick = { isSetupPinVisible = !isSetupPinVisible }) {
-                                            Icon(
-                                                if (isSetupPinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                                                contentDescription = null
-                                            )
-                                        }
-                                    },
-                                    singleLine = true,
-                                    isError = setupOwnerError != null,
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("setup_owner_pin_input")
-                                )
-                                OutlinedTextField(
-                                    value = setupOwnerConfirmPin,
-                                    onValueChange = {
-                                        setupOwnerConfirmPin = it
-                                        setupOwnerError = null
-                                    },
-                                    label = { Text("Confirm Owner Password") },
-                                    visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                                    singleLine = true,
-                                    isError = setupOwnerError != null,
-                                    shape = RoundedCornerShape(10.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("setup_owner_confirm_pin_input")
-                                )
-
-                                if (setupOwnerError != null) {
                                     Text(
-                                        text = setupOwnerError!!,
-                                        color = Rose600,
+                                        text = "FIRST-TIME OWNER SETUP",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        color = Navy900,
+                                        textAlign = TextAlign.Center
+                                    )
+
+                                    Text(
+                                        text = "This installation has not yet configured Owner credentials. Authenticate using the one-time bootstrap setup password to establish your private Owner Password.",
                                         fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
+                                        color = Navy500,
                                         textAlign = TextAlign.Center
                                     )
-                                } else {
-                                    Text(
-                                        text = "Completely isolated from Cashier & Admin PINs. Default backdoors (9999, 1234, 0000, phone numbers) are rejected.",
-                                        fontSize = 11.sp,
-                                        color = Navy400,
-                                        textAlign = TextAlign.Center
-                                    )
-                                }
 
-                                Button(
-                                    onClick = {
-                                        val cleanPin = setupOwnerPin.trim()
-                                        if (cleanPin.length < 4) {
-                                            setupOwnerError = "PIN must be at least 4 characters/digits."
-                                        } else if (cleanPin != setupOwnerConfirmPin.trim()) {
-                                            setupOwnerError = "PINs do not match. Please confirm your PIN."
-                                        } else {
-                                            val success = viewModel.setupOwnerSecurity(cleanPin)
-                                            if (success) {
-                                                isUnlocked = true
-                                                setupOwnerPin = ""
-                                                setupOwnerConfirmPin = ""
-                                                setupOwnerError = null
-                                                toastMessage = "Dedicated Owner Security PIN configured successfully!"
-                                            } else {
-                                                setupOwnerError = "Cannot use prohibited or trivial PIN (e.g. 9999, 1234, 0000, or staff PINs)."
+                                    OutlinedTextField(
+                                        value = bootstrapPasswordInput,
+                                        onValueChange = {
+                                            bootstrapPasswordInput = it
+                                            bootstrapError = null
+                                        },
+                                        label = { Text("Initial Setup Password") },
+                                        placeholder = { Text("Enter setup password") },
+                                        visualTransformation = if (isBootstrapPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                        trailingIcon = {
+                                            IconButton(onClick = { isBootstrapPasswordVisible = !isBootstrapPasswordVisible }) {
+                                                Icon(
+                                                    if (isBootstrapPasswordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                    contentDescription = null
+                                                )
                                             }
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
-                                    shape = RoundedCornerShape(10.dp),
+                                        },
+                                        singleLine = true,
+                                        isError = bootstrapError != null,
+                                        supportingText = {
+                                            if (bootstrapError != null) {
+                                                Text(bootstrapError!!, color = Rose600)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("owner_bootstrap_input")
+                                    )
+
+                                    Button(
+                                        onClick = {
+                                            val clean = bootstrapPasswordInput.trim()
+                                            if (clean.isBlank()) {
+                                                bootstrapError = "Please enter the initial setup password."
+                                            } else if (viewModel.verifyBootstrapPassword(clean) || viewModel.verifyOwnerSecurityCode(clean)) {
+                                                isBootstrapAuthenticated = true
+                                                bootstrapPasswordInput = ""
+                                                bootstrapError = null
+                                            } else {
+                                                bootstrapError = "Invalid first-time setup password. Access Denied."
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("btn_verify_bootstrap_password")
+                                    ) {
+                                        Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Verify Setup Password", fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        } else {
+                            // STEP 2: CREATE PERMANENT OWNER PASSWORD
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("owner_setup_card"),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                            ) {
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(48.dp)
-                                        .testTag("btn_setup_owner_security")
+                                        .padding(24.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)
                                 ) {
-                                    Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Save Credential & Unlock", fontWeight = FontWeight.Bold)
+                                    Surface(
+                                        color = Emerald50,
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Emerald600, modifier = Modifier.size(18.dp))
+                                            Text("Setup Password Verified", color = Emerald700, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    }
+
+                                    Text(
+                                        text = "CREATE PERMANENT OWNER PASSWORD",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp,
+                                        color = Navy900,
+                                        textAlign = TextAlign.Center
+                                    )
+
+                                    Text(
+                                        text = "Initial bootstrap confirmed. Now establish your permanent private Owner Password. Once saved, the first-time setup password will be permanently deactivated.",
+                                        fontSize = 12.sp,
+                                        color = Navy500,
+                                        textAlign = TextAlign.Center
+                                    )
+
+                                    OutlinedTextField(
+                                        value = setupOwnerPin,
+                                        onValueChange = {
+                                            setupOwnerPin = it
+                                            setupOwnerError = null
+                                        },
+                                        label = { Text("New Owner Password") },
+                                        visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                        trailingIcon = {
+                                            IconButton(onClick = { isSetupPinVisible = !isSetupPinVisible }) {
+                                                Icon(
+                                                    if (isSetupPinVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                                    contentDescription = null
+                                                )
+                                            }
+                                        },
+                                        singleLine = true,
+                                        isError = setupOwnerError != null,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("setup_owner_pin_input")
+                                    )
+                                    OutlinedTextField(
+                                        value = setupOwnerConfirmPin,
+                                        onValueChange = {
+                                            setupOwnerConfirmPin = it
+                                            setupOwnerError = null
+                                        },
+                                        label = { Text("Confirm Owner Password") },
+                                        visualTransformation = if (isSetupPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                                        singleLine = true,
+                                        isError = setupOwnerError != null,
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("setup_owner_confirm_pin_input")
+                                    )
+
+                                    if (setupOwnerError != null) {
+                                        Text(
+                                            text = setupOwnerError!!,
+                                            color = Rose600,
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "Minimum 4 characters. The setup password and trivial backdoors are rejected.",
+                                            fontSize = 11.sp,
+                                            color = Navy400,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+
+                                    Button(
+                                        onClick = {
+                                            val cleanPin = setupOwnerPin.trim()
+                                            if (cleanPin.length < 4) {
+                                                setupOwnerError = "Password must be at least 4 characters/digits."
+                                            } else if (cleanPin != setupOwnerConfirmPin.trim()) {
+                                                setupOwnerError = "Passwords do not match. Please confirm your password."
+                                            } else {
+                                                val success = viewModel.setupOwnerSecurity(cleanPin)
+                                                if (success) {
+                                                    isUnlocked = true
+                                                    isBootstrapAuthenticated = false
+                                                    setupOwnerPin = ""
+                                                    setupOwnerConfirmPin = ""
+                                                    setupOwnerError = null
+                                                    toastMessage = "Dedicated Owner Password saved! Initial setup password permanently deactivated."
+                                                } else {
+                                                    setupOwnerError = "Cannot use prohibited or trivial password (e.g. 2194903, 9999, 1234, 0000)."
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                                        shape = RoundedCornerShape(10.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(48.dp)
+                                            .testTag("btn_setup_owner_security")
+                                    ) {
+                                        Icon(Icons.Default.LockOpen, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text("Save Permanent Password & Unlock", fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
                         }

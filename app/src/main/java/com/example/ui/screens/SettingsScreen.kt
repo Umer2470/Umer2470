@@ -40,11 +40,17 @@ import com.example.ui.components.PaymentQrSettingsSection
 import com.example.ui.components.SectionHeader
 import com.example.ui.components.ShopLogoAvatar
 import com.example.ui.components.StatusBadge
+import com.example.ui.components.settings.AboutAndSupportSection
+import com.example.ui.components.settings.BluetoothPrinterSection
+import com.example.ui.components.settings.InvoicePdfSettingsSection
+import com.example.ui.components.settings.NetworkPrinterSection
+import com.example.ui.components.settings.ReceiptSettingsSection
 import com.example.ui.theme.*
 import com.example.ui.viewmodel.StoreViewModel
 import com.example.util.BiometricPromptHelper
 import com.example.util.BrandingImageHelper
 import com.example.util.PaymentQrImageHelper
+import com.example.util.PosSettingsManager
 
 @Composable
 fun SettingsScreen(
@@ -61,6 +67,7 @@ fun SettingsScreen(
     val isCameraScannerEnabled by viewModel.cameraScannerEnabled.collectAsState()
 
     val context = LocalContext.current
+    val posSettingsManager = remember(context) { PosSettingsManager.getInstance(context) }
     val (isBioHardwareAvailable, bioStatusText) = remember(context) { BiometricPromptHelper.isBiometricAvailable(context) }
     var biometricTestMessage by remember { mutableStateOf<String?>(null) }
     var isBiometricTestSuccess by remember { mutableStateOf(false) }
@@ -764,6 +771,31 @@ fun SettingsScreen(
                 }
             }
 
+            // 5.1 Thermal Receipt Settings
+            ReceiptSettingsSection(
+                settingsManager = posSettingsManager,
+                storeSettings = storeSettings,
+                onSaveStoreSettings = { updated ->
+                    viewModel.updateStoreSettings(updated)
+                }
+            )
+
+            // 5.2 Invoice PDF Settings
+            InvoicePdfSettingsSection(
+                settingsManager = posSettingsManager,
+                storeSettings = storeSettings
+            )
+
+            // 5.3 Bluetooth Thermal Printer Settings
+            BluetoothPrinterSection(
+                settingsManager = posSettingsManager
+            )
+
+            // 5.4 Network Printer Support (TCP/IP ESC/POS)
+            NetworkPrinterSection(
+                settingsManager = posSettingsManager
+            )
+
             // 4. Payment Settings & Scan-to-Pay QR
             PaymentQrSettingsSection(
                 viewModel = viewModel,
@@ -1055,6 +1087,11 @@ fun SettingsScreen(
 
             listOf(
                 Triple("👑 Owner Control Center", "Master PIN, license tools & proprietor hub", "owner_control_center"),
+                Triple("🧾 Thermal Receipt Settings", "Paper size, header/footer, auto-print & preview", "receipt_settings"),
+                Triple("📄 Invoice PDF Settings", "Tagline, accent styling, footer & tax registration", "pdf_settings"),
+                Triple("🖨️ Bluetooth Thermal Printer", "Wireless ESC/POS connection, scanner & test print", "bluetooth_printer"),
+                Triple("🌐 Network ESC/POS Printer", "Ethernet / Wi-Fi IP & port printer configuration", "network_printer"),
+                Triple("ℹ️ About & Support Portal", "Version info, Terms of Service, Email, WhatsApp & downloads", "about_support"),
                 Triple("☁️ Cloud Backup & Recovery", "Google Drive sync, automatic snapshots & restore", "backup_recovery"),
                 Triple("🚀 Developer Platform Hub", "Multi-app management, license registry & hardware binding", "developer_hub"),
                 Triple("Store Management Center", "Multi-branch and outlet configurations", "store_management"),
@@ -1089,6 +1126,11 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            // 7. General / About & Official Support
+            AboutAndSupportSection(
+                settingsManager = posSettingsManager
+            )
         }
 
         if (showEmergencyDialog) {
