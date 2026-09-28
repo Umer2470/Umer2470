@@ -30,7 +30,7 @@ class DeveloperApiClient private constructor(context: Context) {
         .build()
 
     private val retrofit: Retrofit = Retrofit.Builder()
-        .baseUrl(ApiConfig.DEFAULT_DEVELOPER_SERVER_URL)
+        .baseUrl(ApiConfig.getBaseUrl())
         .client(okHttpClient)
         .addConverterFactory(MoshiConverterFactory.create(moshi))
         .build()

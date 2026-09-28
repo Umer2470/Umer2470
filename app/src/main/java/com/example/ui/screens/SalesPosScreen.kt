@@ -141,7 +141,7 @@ fun SalesPosScreen(
     // ----------------------------------------------------
     // CAMERA BARCODE SCANNER MODAL
     // ----------------------------------------------------
-    if (showCameraScannerDialog && isCameraScannerEnabled) {
+    if (showCameraScannerDialog) {
         androidx.compose.ui.window.Dialog(
             onDismissRequest = { showCameraScannerDialog = false },
             properties = androidx.compose.ui.window.DialogProperties(

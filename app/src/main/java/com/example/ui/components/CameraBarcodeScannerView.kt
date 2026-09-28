@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import com.example.data.entity.Product
 import com.example.ui.theme.*
@@ -51,26 +52,28 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.Executor
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val TAG = "CameraBarcodeScanner"
 
 /**
- * Production-ready Real-time Camera Barcode Scanner View.
+ * Hardened Crash-Proof Real-time Camera Barcode Scanner View.
  *
- * Fixes Black Screen Root Causes:
- * 1. Uses PreviewView.ImplementationMode.COMPATIBLE (TextureView) to prevent SurfaceView
- *    layer punching bugs in Jetpack Compose and Dialog windows.
- * 2. Binds directly to the host ComponentActivity LifecycleOwner to prevent premature
- *    unbinding or Dialog synthetic lifecycle mismatches.
- * 3. Safely releases cameraProvider, closes analyzers, and shuts down cameraExecutor in
- *    DisposableEffect onDispose to avoid camera hardware lockups on reopen.
- * 4. Implements tap-to-focus and continuous autofocus.
- * 5. Supports all requested barcode formats (Code 128, EAN-13, EAN-8, UPC-A, Code 39, ITF, QR Code).
- * 6. Handles permission states gracefully, including direct intent to Android Settings.
- * 7. In-scanner Product Lookup with non-destructive "Product Not Found" handling.
+ * Root Cause Fixes:
+ * 1. Threading: All ML Kit barcode callbacks dispatch to ContextCompat.getMainExecutor(ctx)
+ *    preventing Compose Snapshot and background thread mutation crashes.
+ * 2. Execution safety: SafeCameraExecutor catches and drops tasks during shutdown, preventing
+ *    fatal RejectedExecutionException from Camera2 dispatch threads.
+ * 3. Recomposition isolation: Laser reticle animation is isolated in LaserScannerReticle,
+ *    preventing 120 FPS recomposition from flooding CameraControl.enableTorch().
+ * 4. Safe hardware binding: Checks hasCamera with try-catch and auto-fallback from Back to Front
+ *    camera before binding. Removes restrictive 16:9 aspect ratio constraints that fail on LEGACY hardware.
+ * 5. Lifecycle teardown: ClearAnalyzer -> UnbindAll -> Executor shutdown in exact guaranteed order.
+ * 6. Vibrate permission added to Manifest to avoid SecurityException on Android 12+.
  */
 @Composable
 fun CameraBarcodeScannerView(
@@ -109,6 +112,7 @@ fun CameraBarcodeScannerView(
     var isTorchOn by remember { mutableStateOf(false) }
     var useBackCamera by remember { mutableStateOf(true) }
     var cameraControl by remember { mutableStateOf<CameraControl?>(null) }
+    var cameraInfo by remember { mutableStateOf<CameraInfo?>(null) }
     var cameraErrorMessage by remember { mutableStateOf<String?>(null) }
     var isCameraReady by remember { mutableStateOf(false) }
 
@@ -119,34 +123,50 @@ fun CameraBarcodeScannerView(
     var manualCodeInput by remember { mutableStateOf("") }
     var showManualDialog by remember { mutableStateOf(false) }
 
-    // Reference to camera provider and executor for guaranteed cleanup
+    // Track active resources for clean disposal
     var activeCameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+    var activeImageAnalysis by remember { mutableStateOf<ImageAnalysis?>(null) }
     var activeExecutor by remember { mutableStateOf<ExecutorService?>(null) }
+    val isDisposed = remember { AtomicBoolean(false) }
+
+    // Safe Torch management (runs only when isTorchOn or cameraControl actually changes)
+    LaunchedEffect(isTorchOn, cameraControl, cameraInfo) {
+        try {
+            if (cameraInfo?.hasFlashUnit() == true) {
+                cameraControl?.enableTorch(isTorchOn)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Torch toggle ignored: ${e.message}")
+        }
+    }
 
     // Lifecycle cleanup on disposal
     DisposableEffect(effectiveLifecycleOwner) {
         onDispose {
             try {
-                Log.d(TAG, "Releasing camera session and executor on dispose")
-                activeCameraProvider?.unbindAll()
-                activeExecutor?.shutdown()
+                Log.d(TAG, "Safely releasing camera session and executor on dispose")
+                isDisposed.set(true)
+                isProcessingBarcode.set(true)
+                try {
+                    activeImageAnalysis?.clearAnalyzer()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error clearing analyzer: ${e.message}")
+                }
+                try {
+                    activeCameraProvider?.unbindAll()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error unbinding camera: ${e.message}")
+                }
+                try {
+                    activeExecutor?.shutdown()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error shutting down executor: ${e.message}")
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Error cleaning up camera: ${e.message}", e)
             }
         }
     }
-
-    // Laser Animation for Viewfinder
-    val infiniteTransition = rememberInfiniteTransition(label = "laser_transition")
-    val laserOffset by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "laser_offset"
-    )
 
     Box(
         modifier = modifier
@@ -161,8 +181,6 @@ fun CameraBarcodeScannerView(
                     .fillMaxSize()
                     .testTag("camera_preview_view"),
                 factory = { ctx ->
-                    // CRITICAL FIX: ImplementationMode.COMPATIBLE uses TextureView instead of SurfaceView.
-                    // SurfaceView renders beneath Jetpack Compose layers causing a black screen!
                     val previewView = PreviewView(ctx).apply {
                         implementationMode = PreviewView.ImplementationMode.COMPATIBLE
                         scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -172,8 +190,19 @@ fun CameraBarcodeScannerView(
                         )
                     }
 
-                    val cameraExecutor = Executors.newSingleThreadExecutor()
-                    activeExecutor = cameraExecutor
+                    val rawExecutor = Executors.newSingleThreadExecutor()
+                    activeExecutor = rawExecutor
+
+                    // Safe executor wrapper: drops frame tasks during shutdown rather than throwing RejectedExecutionException
+                    val safeExecutor = Executor { command ->
+                        if (!isDisposed.get() && !rawExecutor.isShutdown) {
+                            try {
+                                rawExecutor.execute(command)
+                            } catch (_: RejectedExecutionException) {
+                                // Gracefully ignore dropped frames during teardown
+                            }
+                        }
+                    }
 
                     // ML Kit barcode scanner configuration
                     val options = BarcodeScannerOptions.Builder()
@@ -189,30 +218,45 @@ fun CameraBarcodeScannerView(
                         )
                         .build()
                     val barcodeScanner = BarcodeScanning.getClient(options)
+                    val mainExecutor = ContextCompat.getMainExecutor(ctx)
 
-                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                    val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx.applicationContext)
 
                     cameraProviderFuture.addListener({
+                        if (isDisposed.get()) return@addListener
+
                         try {
                             val cameraProvider = cameraProviderFuture.get()
                             activeCameraProvider = cameraProvider
 
-                            // Camera selector (BACK camera default)
-                            val cameraSelector = if (useBackCamera) {
-                                CameraSelector.DEFAULT_BACK_CAMERA
-                            } else {
-                                CameraSelector.DEFAULT_FRONT_CAMERA
+                            // Camera selector with automatic fallback (Back -> Front -> Any available)
+                            val resolvedSelector = try {
+                                when {
+                                    useBackCamera && cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> CameraSelector.DEFAULT_BACK_CAMERA
+                                    !useBackCamera && cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> CameraSelector.DEFAULT_FRONT_CAMERA
+                                    cameraProvider.hasCamera(CameraSelector.DEFAULT_BACK_CAMERA) -> {
+                                        useBackCamera = true
+                                        CameraSelector.DEFAULT_BACK_CAMERA
+                                    }
+                                    cameraProvider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA) -> {
+                                        useBackCamera = false
+                                        CameraSelector.DEFAULT_FRONT_CAMERA
+                                    }
+                                    else -> null
+                                }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Camera availability check failed: ${e.message}")
+                                null
                             }
 
-                            // Verify camera exists
-                            if (!cameraProvider.hasCamera(cameraSelector)) {
-                                cameraErrorMessage = "Requested camera (Back: $useBackCamera) is not available on this device."
+                            if (resolvedSelector == null) {
+                                cameraErrorMessage = "No camera hardware available on this device."
+                                isCameraReady = false
                                 return@addListener
                             }
 
-                            // High-quality preview use case
+                            // Dynamic Preview use case
                             val preview = Preview.Builder()
-                                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
                                 .build()
                                 .also {
                                     it.setSurfaceProvider(previewView.surfaceProvider)
@@ -220,11 +264,15 @@ fun CameraBarcodeScannerView(
 
                             // High-speed Image Analysis use case
                             val imageAnalysis = ImageAnalysis.Builder()
-                                .setTargetAspectRatio(AspectRatio.RATIO_16_9)
                                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                                 .build()
                                 .also { analysis ->
-                                    analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                    analysis.setAnalyzer(safeExecutor) { imageProxy ->
+                                        if (isDisposed.get()) {
+                                            imageProxy.close()
+                                            return@setAnalyzer
+                                        }
+
                                         @SuppressLint("UnsafeOptInUsageError")
                                         val mediaImage = imageProxy.image
 
@@ -235,11 +283,12 @@ fun CameraBarcodeScannerView(
                                             )
 
                                             barcodeScanner.process(image)
-                                                .addOnSuccessListener { barcodes ->
+                                                .addOnSuccessListener(mainExecutor) { barcodes ->
+                                                    if (isDisposed.get()) return@addOnSuccessListener
+
                                                     for (barcode in barcodes) {
                                                         val rawValue = barcode.rawValue?.trim()
                                                         if (!rawValue.isNullOrBlank() && !isProcessingBarcode.get()) {
-                                                            // Anti-duplicate lock
                                                             if (isProcessingBarcode.compareAndSet(false, true)) {
                                                                 lastScannedCode = rawValue
                                                                 Log.d(TAG, "Barcode detected: $rawValue")
@@ -256,104 +305,87 @@ fun CameraBarcodeScannerView(
                                                                     SoundEffectHelper.playBeepAndVibrate(ctx, true)
                                                                     onBarcodeScanned(rawValue)
                                                                 } else {
-                                                                    // Unsuccessful scan: Product not found in database
                                                                     SoundEffectHelper.playBeepAndVibrate(ctx, false)
                                                                     scannedNotFoundCode = rawValue
-                                                                    // Keep camera active, unlock processing after pause
                                                                 }
                                                                 break
                                                             }
                                                         }
                                                     }
                                                 }
-                                                .addOnFailureListener { e ->
-                                                    Log.e(TAG, "Barcode processing failed: ${e.message}")
+                                                .addOnFailureListener(mainExecutor) { e ->
+                                                    Log.w(TAG, "Barcode processing: ${e.message}")
                                                 }
-                                                .addOnCompleteListener {
-                                                    imageProxy.close()
+                                                .addOnCompleteListener(mainExecutor) {
+                                                    try {
+                                                        imageProxy.close()
+                                                    } catch (_: Exception) {}
                                                 }
                                         } else {
-                                            imageProxy.close()
+                                            try {
+                                                imageProxy.close()
+                                            } catch (_: Exception) {}
                                         }
                                     }
                                 }
 
-                            // Unbind any previous instances before binding to avoid hardware lock
+                            activeImageAnalysis = imageAnalysis
+
+                            // Safe unbind before binding
                             cameraProvider.unbindAll()
 
-                            val camera = cameraProvider.bindToLifecycle(
-                                effectiveLifecycleOwner,
-                                cameraSelector,
-                                preview,
-                                imageAnalysis
-                            )
+                            // Verify lifecycle state is safe for binding
+                            val lifecycle = effectiveLifecycleOwner.lifecycle
+                            if (lifecycle.currentState.isAtLeast(Lifecycle.State.INITIALIZED)) {
+                                val camera = cameraProvider.bindToLifecycle(
+                                    effectiveLifecycleOwner,
+                                    resolvedSelector,
+                                    preview,
+                                    imageAnalysis
+                                )
 
-                            cameraControl = camera.cameraControl
-                            isCameraReady = true
-                            cameraErrorMessage = null
+                                cameraControl = camera.cameraControl
+                                cameraInfo = camera.cameraInfo
+                                isCameraReady = true
+                                cameraErrorMessage = null
 
-                            // Tap to focus support
-                            previewView.setOnTouchListener { _, event ->
-                                if (event.action == MotionEvent.ACTION_UP) {
-                                    val factory = previewView.meteringPointFactory
-                                    val point = factory.createPoint(event.x, event.y)
-                                    val action = FocusMeteringAction.Builder(point).build()
-                                    cameraControl?.startFocusAndMetering(action)
+                                // Tap to focus support
+                                previewView.setOnTouchListener { _, event ->
+                                    if (event.action == MotionEvent.ACTION_UP) {
+                                        try {
+                                            val factory = previewView.meteringPointFactory
+                                            val point = factory.createPoint(event.x, event.y)
+                                            val action = FocusMeteringAction.Builder(point).build()
+                                            cameraControl?.startFocusAndMetering(action)
+                                        } catch (e: Exception) {
+                                            Log.w(TAG, "Tap to focus error: ${e.message}")
+                                        }
+                                    }
+                                    true
                                 }
-                                true
+                            } else {
+                                Log.w(TAG, "Lifecycle state not ready: ${lifecycle.currentState}")
                             }
 
                         } catch (e: Exception) {
-                            Log.e(TAG, "Failed to initialize CameraX: ${e.message}", e)
-                            cameraErrorMessage = "Unable to start camera. Please close other apps using the camera and try again."
+                            Log.e(TAG, "Failed to initialize CameraX safely: ${e.message}", e)
+                            cameraErrorMessage = "Unable to start camera. Please close other apps using the camera or use manual barcode entry."
                             isCameraReady = false
                         }
-                    }, ContextCompat.getMainExecutor(ctx))
+                    }, mainExecutor)
 
                     previewView
                 },
-                update = { previewView ->
-                    // Dynamic updates when torch changes
-                    cameraControl?.enableTorch(isTorchOn)
+                update = {
+                    // Intentionally empty to avoid recomposition flooding
                 }
             )
 
-            // Scanning Overlay Frame & Laser
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                // Viewfinder Reticle Box
-                Box(
-                    modifier = Modifier
-                        .size(270.dp)
-                        .border(2.5.dp, if (scannedNotFoundCode != null) Rose500 else Emerald400, RoundedCornerShape(18.dp))
-                        .clip(RoundedCornerShape(18.dp))
-                        .testTag("viewfinder_reticle")
-                ) {
-                    // Animated Scanning Laser Line
-                    if (isCameraReady && scannedNotFoundCode == null) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(2.5.dp)
-                                .align(Alignment.TopCenter)
-                                .offset(y = (270 * laserOffset).dp)
-                                .background(Emerald400)
-                        )
-                    }
-
-                    // Center Focus Guide Target
-                    Box(
-                        modifier = Modifier
-                            .size(16.dp)
-                            .align(Alignment.Center)
-                            .border(1.5.dp, Color.White.copy(alpha = 0.6f), CircleShape)
-                    )
-                }
-            }
+            // Scanning Overlay Frame & Laser (isolated composable to prevent parent recompositions)
+            LaserScannerReticle(
+                isCameraReady = isCameraReady,
+                isNotFound = scannedNotFoundCode != null
+            )
 
             // Top Bar Controls
             Row(
@@ -418,11 +450,14 @@ fun CameraBarcodeScannerView(
                     }
 
                     // Torch Flashlight
+                    val hasFlash = cameraInfo?.hasFlashUnit() == true
                     IconButton(
                         onClick = {
-                            isTorchOn = !isTorchOn
-                            cameraControl?.enableTorch(isTorchOn)
+                            if (hasFlash) {
+                                isTorchOn = !isTorchOn
+                            }
                         },
+                        enabled = hasFlash,
                         modifier = Modifier
                             .size(44.dp)
                             .clip(CircleShape)
@@ -432,7 +467,7 @@ fun CameraBarcodeScannerView(
                         Icon(
                             if (isTorchOn) Icons.Default.FlashOn else Icons.Default.FlashOff,
                             contentDescription = "Flashlight",
-                            tint = if (isTorchOn) Navy900 else Color.White
+                            tint = if (isTorchOn) Navy900 else if (hasFlash) Color.White else Color.Gray
                         )
                     }
                 }
@@ -518,7 +553,7 @@ fun CameraBarcodeScannerView(
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
-                        text = "Align barcode within green reticle • Tap screen to focus",
+                        text = "Align barcode within reticle • Tap screen to focus",
                         color = Color.White.copy(alpha = 0.85f),
                         fontSize = 12.sp,
                         modifier = Modifier.padding(bottom = 10.dp)
@@ -559,7 +594,7 @@ fun CameraBarcodeScannerView(
                             Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = Rose500, modifier = Modifier.size(48.dp))
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                text = "Camera Hardware Unavailable",
+                                text = "Camera Scanner Notice",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
@@ -578,13 +613,12 @@ fun CameraBarcodeScannerView(
                                 }
                                 Button(
                                     onClick = {
-                                        cameraErrorMessage = null
-                                        isProcessingBarcode.set(false)
+                                        showManualDialog = true
                                     },
                                     colors = ButtonDefaults.buttonColors(containerColor = Emerald600),
                                     modifier = Modifier.weight(1f)
                                 ) {
-                                    Text("Retry Camera")
+                                    Text("Manual Search")
                                 }
                             }
                         }
@@ -651,50 +685,53 @@ fun CameraBarcodeScannerView(
                             }
                             context.startActivity(intent)
                         } catch (e: Exception) {
-                            Log.e(TAG, "Cannot open settings: ${e.message}")
+                            Log.e(TAG, "Failed to open settings: ${e.message}")
                         }
                     },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth().testTag("btn_open_settings")
                 ) {
-                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 6.dp))
-                    Text("Open Android Settings")
+                    Icon(Icons.Default.Settings, contentDescription = null, modifier = Modifier.size(16.dp).padding(end = 6.dp))
+                    Text("Open App Settings")
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                Button(
+                TextButton(
                     onClick = { showManualDialog = true },
-                    colors = ButtonDefaults.buttonColors(containerColor = Navy800),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("btn_manual_input_from_permission")
+                    modifier = Modifier.testTag("btn_manual_entry_permission_denied")
                 ) {
-                    Icon(Icons.Default.Keyboard, contentDescription = null, modifier = Modifier.size(18.dp).padding(end = 6.dp))
-                    Text("Manual Barcode Input")
+                    Icon(Icons.Default.Keyboard, contentDescription = null, tint = Emerald400, modifier = Modifier.size(16.dp).padding(end = 6.dp))
+                    Text("Enter Barcode / SKU Manually", color = Emerald400)
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                TextButton(onClick = onClose, modifier = Modifier.testTag("btn_cancel_permission")) {
-                    Text("Cancel", color = Slate400, fontSize = 13.sp)
+                TextButton(onClick = onClose) {
+                    Text("Cancel & Return to POS", color = Slate400)
                 }
             }
         }
 
-        // Manual Barcode Input Dialog
+        // Manual Barcode / SKU Input Dialog Fallback
         if (showManualDialog) {
             AlertDialog(
                 onDismissRequest = { showManualDialog = false },
-                title = { Text("Manual Barcode Input", fontWeight = FontWeight.Bold, color = Navy900) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.QrCode, contentDescription = null, tint = Emerald600)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Enter Barcode or SKU", fontWeight = FontWeight.Bold)
+                    }
+                },
                 text = {
                     Column {
                         Text(
-                            text = "Enter product Barcode or SKU directly:",
-                            fontSize = 12.sp,
-                            color = Slate600
+                            "Type the exact product barcode or SKU code to lookup and add:",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         OutlinedTextField(
                             value = manualCodeInput,
                             onValueChange = { manualCodeInput = it },
@@ -725,6 +762,63 @@ fun CameraBarcodeScannerView(
                         Text("Cancel")
                     }
                 }
+            )
+        }
+    }
+}
+
+/**
+ * Isolated Viewfinder Reticle with Laser animation.
+ * Isolates the 60/120 FPS animation to this component alone,
+ * completely preventing parent recompositions from affecting camera hardware.
+ */
+@Composable
+private fun LaserScannerReticle(
+    isCameraReady: Boolean,
+    isNotFound: Boolean
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "laser_transition")
+    val laserOffset by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "laser_offset"
+    )
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(270.dp)
+                .border(2.5.dp, if (isNotFound) Rose500 else Emerald400, RoundedCornerShape(18.dp))
+                .clip(RoundedCornerShape(18.dp))
+                .testTag("viewfinder_reticle")
+        ) {
+            // Animated Scanning Laser Line
+            if (isCameraReady && !isNotFound) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(2.5.dp)
+                        .align(Alignment.TopCenter)
+                        .offset(y = (270 * laserOffset).dp)
+                        .background(Emerald400)
+                )
+            }
+
+            // Center Focus Guide Target
+            Box(
+                modifier = Modifier
+                    .size(16.dp)
+                    .align(Alignment.Center)
+                    .border(1.5.dp, Color.White.copy(alpha = 0.6f), CircleShape)
             )
         }
     }

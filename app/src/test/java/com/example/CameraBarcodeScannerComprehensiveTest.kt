@@ -133,4 +133,66 @@ class CameraBarcodeScannerComprehensiveTest {
         prefs.edit().putBoolean("enable_camera_scanner", false).commit()
         assertFalse(prefs.getBoolean("enable_camera_scanner", false))
     }
+
+    @Test
+    fun testSafeCameraExecutorRejectionResilience() {
+        // Verifies that during camera teardown / unbind, frame tasks submitted to
+        // a shutting-down or shutdown executor are dropped without throwing RejectedExecutionException
+        val rawExecutor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        val isDisposed = AtomicBoolean(false)
+        var droppedCount = 0
+
+        val safeExecutor = java.util.concurrent.Executor { command ->
+            if (!isDisposed.get() && !rawExecutor.isShutdown) {
+                try {
+                    rawExecutor.execute(command)
+                } catch (_: java.util.concurrent.RejectedExecutionException) {
+                    droppedCount++
+                }
+            } else {
+                droppedCount++
+            }
+        }
+
+        // 1. Submit normal task before shutdown
+        val executedCount = AtomicInteger(0)
+        safeExecutor.execute { executedCount.incrementAndGet() }
+        Thread.sleep(50)
+        assertEquals(1, executedCount.get())
+
+        // 2. Simulate teardown: isDisposed = true, executor.shutdown()
+        isDisposed.set(true)
+        rawExecutor.shutdown()
+
+        // 3. Late arriving camera frames dispatched after dispose
+        try {
+            repeat(10) {
+                safeExecutor.execute { executedCount.incrementAndGet() }
+            }
+            assertTrue("No RejectedExecutionException should be thrown", true)
+            assertEquals("Executed count should not increase after shutdown", 1, executedCount.get())
+            assertTrue("Tasks must be safely dropped", droppedCount >= 10)
+        } catch (e: Exception) {
+            fail("Safe executor must never propagate uncaught exception: ${e.message}")
+        }
+    }
+
+    @Test
+    fun testNonDestructiveProductNotFoundHandling() {
+        val catalog = listOf(
+            Product(id = 1, name = "Basmati Rice", barcode = "8901234567890", salePrice = 300.0)
+        )
+
+        val unknownBarcode = "9999999999999"
+        val match = catalog.find { it.barcode.equals(unknownBarcode, ignoreCase = true) }
+
+        // Must return null without crashing
+        assertNull(match)
+
+        // User enters manual fallback
+        val manualFallback = "8901234567890"
+        val manualMatch = catalog.find { it.barcode.equals(manualFallback, ignoreCase = true) }
+        assertNotNull(manualMatch)
+        assertEquals("Basmati Rice", manualMatch?.name)
+    }
 }

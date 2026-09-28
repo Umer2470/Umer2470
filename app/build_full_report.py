@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
 import sys
-from generate_master_audit_pdf import MasterAuditPdfBuilder
+from generate_master_audit_pdf import (
+    MasterAuditPdfBuilder,
+    NAVY,
+    SLATE_DARK,
+    SLATE_LIGHT,
+    TEXT_DARK,
+    TEXT_MUTED,
+    EMERALD,
+    AMBER,
+    ROSE,
+    BLUE,
+    WHITE,
+    BORDER
+)
+import shutil
 
 def main():
-    pdf = MasterAuditPdfBuilder('/app/CHOUDHURY_POS_APP_AUDIT_REPORT.pdf')
+    output_path = 'CHOUDHURY_POS_APP_AUDIT_REPORT.pdf'
+    pdf = MasterAuditPdfBuilder(output_path)
     pdf.add_cover_page()
     pdf.new_page()
 
@@ -765,7 +780,14 @@ def main():
     pdf.add_table(exec_headers, exec_rows, exec_widths)
 
     total_pages = pdf.finish()
-    print(f"Master Audit PDF generated: {total_pages} pages.")
+    print(f"Master Audit PDF generated: {total_pages} pages at {output_path}.")
+    for dest in ['/app/CHOUDHURY_POS_APP_AUDIT_REPORT.pdf', '/tmp/CHOUDHURY_POS_APP_AUDIT_REPORT.pdf', '/app/applet/CHOUDHURY_POS_APP_AUDIT_REPORT.pdf']:
+        try:
+            if dest != output_path:
+                shutil.copy(output_path, dest)
+                print(f"Copied to {dest}")
+        except Exception as e:
+            pass
 
 if __name__ == '__main__':
     main()
