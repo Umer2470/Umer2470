@@ -183,12 +183,217 @@
     .thermal-receipt { width: 300px; margin: 0 auto; background: white; padding: 16px; border: 1px dashed #cbd5e1; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: black; line-height: 1.4; }
     .thermal-receipt .center { text-align: center; }
     .thermal-receipt .divider { border-bottom: 1px dashed black; margin: 8px 0; }
-    
+
+    /* Full Page A4 Tax Invoice Styles */
+    .a4-tax-invoice {
+      max-width: 780px;
+      margin: 0 auto;
+      background: white;
+      padding: 24px 30px;
+      border: 1px solid var(--slate-300);
+      border-radius: 8px;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      color: #0f172a;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+      line-height: 1.4;
+    }
+    .a4-tax-invoice .invoice-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding-bottom: 16px;
+      border-bottom: 2px solid var(--navy-900);
+    }
+    .a4-tax-invoice .store-info h2 {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--navy-900);
+      margin: 0 0 4px 0;
+      letter-spacing: -0.5px;
+    }
+    .a4-tax-invoice .store-info p {
+      font-size: 11.5px;
+      color: var(--slate-600);
+      margin: 2px 0;
+      line-height: 1.4;
+    }
+    .a4-tax-invoice .badge-tax-invoice {
+      background: var(--navy-900);
+      color: white;
+      padding: 10px 18px;
+      border-radius: 8px;
+      text-align: right;
+    }
+    .a4-tax-invoice .badge-tax-invoice .badge-title {
+      color: var(--amber-400);
+      font-size: 13px;
+      font-weight: 800;
+      letter-spacing: 1px;
+    }
+    .a4-tax-invoice .badge-tax-invoice .badge-inv-num {
+      font-size: 14px;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .a4-tax-invoice .meta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+      padding: 12px 16px;
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: 6px;
+    }
+    .a4-tax-invoice .meta-block h4 {
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: var(--slate-500);
+      margin: 0 0 6px 0;
+      letter-spacing: 0.5px;
+    }
+    .a4-tax-invoice .meta-block p {
+      font-size: 12.5px;
+      margin: 2px 0;
+      color: var(--navy-900);
+      line-height: 1.4;
+    }
+    .a4-tax-invoice table.invoice-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 16px 0;
+    }
+    .a4-tax-invoice table.invoice-table th {
+      background: var(--navy-900);
+      color: white;
+      font-size: 11.5px;
+      font-weight: 700;
+      text-align: left;
+      padding: 8px 10px;
+    }
+    .a4-tax-invoice table.invoice-table th.text-right {
+      text-align: right;
+    }
+    .a4-tax-invoice table.invoice-table th.text-center {
+      text-align: center;
+    }
+    .a4-tax-invoice table.invoice-table td {
+      padding: 8px 10px;
+      font-size: 12px;
+      border-bottom: 1px solid var(--slate-200);
+      color: var(--slate-800);
+    }
+    .a4-tax-invoice table.invoice-table tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+    .a4-tax-invoice table.invoice-table td.text-right {
+      text-align: right;
+    }
+    .a4-tax-invoice table.invoice-table td.text-center {
+      text-align: center;
+    }
+    .a4-tax-invoice .summary-grid {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-top: 16px;
+      gap: 20px;
+    }
+    .a4-tax-invoice .totals-box {
+      width: 320px;
+      background: var(--slate-50);
+      border: 1px solid var(--slate-200);
+      border-radius: 6px;
+      padding: 12px 16px;
+    }
+    .a4-tax-invoice .totals-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: 12.5px;
+      margin-bottom: 6px;
+      color: var(--slate-700);
+    }
+    .a4-tax-invoice .totals-grand {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 800;
+      color: white;
+      background: var(--navy-900);
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin: 8px 0 6px 0;
+    }
+    .a4-tax-invoice .invoice-footer-section {
+      margin-top: 24px;
+      padding-top: 14px;
+      border-top: 1px solid var(--slate-200);
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .a4-tax-invoice .signature-area {
+      text-align: center;
+      width: 220px;
+    }
+    .a4-tax-invoice .signature-line {
+      border-top: 1.5px solid var(--slate-400);
+      margin-bottom: 4px;
+    }
+
     /* Print Styles */
+    @page {
+      margin: 10mm 12mm;
+      size: auto;
+    }
     @media print {
-      body * { visibility: hidden; }
-      .printable-receipt-area, .printable-receipt-area * { visibility: visible; }
-      .printable-receipt-area { position: absolute; left: 0; top: 0; width: 100%; }
+      html, body {
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        width: 100% !important;
+        color: #0f172a !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+      body * {
+        visibility: hidden !important;
+      }
+      #printableInvoiceArea,
+      #printableInvoiceArea * {
+        visibility: visible !important;
+      }
+      #printableInvoiceArea {
+        position: absolute !important;
+        left: 0 !important;
+        right: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        margin: 0 auto !important;
+        padding: 0 !important;
+        display: block !important;
+      }
+      .a4-tax-invoice {
+        max-width: 100% !important;
+        width: 100% !important;
+        box-shadow: none !important;
+        border: 1px solid #cbd5e1 !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        margin: 0 auto !important;
+      }
+      .thermal-receipt {
+        margin: 0 auto !important;
+        width: 280px !important;
+        border: none !important;
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      .no-print {
+        display: none !important;
+      }
     }
 
     /* Mobile Responsive */
@@ -690,6 +895,10 @@
               <div class="divider"></div>
               <div class="center" style="font-size: 10px;">Thank you for your business!</div>
             </div>
+            <div style="margin-top: 14px; display: flex; gap: 8px; justify-content: center; max-width: 300px; margin-left: auto; margin-right: auto;">
+              <button class="btn btn-primary" onclick="testPrintInvoice('A4')" style="flex: 1; font-size: 11px; height: 32px;">Test A4 Print</button>
+              <button class="btn btn-secondary" onclick="testPrintInvoice('thermal')" style="flex: 1; font-size: 11px; height: 32px;">Test Thermal</button>
+            </div>
           </div>
         </div>
 
@@ -950,6 +1159,44 @@
       </div>
     </div>
   </div>
+
+  <!-- ======================================================== -->
+  <!-- MODAL: INVOICE PREVIEW & FULL-PAGE PRINTING             -->
+  <!-- ======================================================== -->
+  <div class="modal-backdrop" id="invoicePrintModal">
+    <div class="modal-box" style="max-width: 860px; max-height: 94vh; display: flex; flex-direction: column;">
+      <div class="modal-header" style="background: var(--navy-900); color: white; border-radius: 12px 12px 0 0;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <h3 id="printModalTitle" style="color: white; margin: 0; font-size: 16px;">Invoice & Receipt Printing</h3>
+          <div style="display: flex; background: rgba(255,255,255,0.1); border-radius: 6px; padding: 2px;">
+            <button id="btnSwitchA4" onclick="setPrintFormat('A4')" class="btn" style="height: 28px; font-size: 11px; padding: 0 10px; background: var(--amber-400); color: var(--navy-900); font-weight: 700; border-radius: 4px;">A4 Tax Invoice</button>
+            <button id="btnSwitchThermal" onclick="setPrintFormat('thermal')" class="btn" style="height: 28px; font-size: 11px; padding: 0 10px; background: transparent; color: white; font-weight: 600; border-radius: 4px;">80mm Thermal</button>
+          </div>
+        </div>
+        <button class="btn-close-modal" onclick="closeInvoicePrintModal()" style="color: white;">&times;</button>
+      </div>
+      <div class="modal-body" style="background: var(--slate-100); overflow-y: auto; padding: 20px; display: flex; justify-content: center;">
+        <div id="modalInvoicePreviewContainer" style="width: 100%;">
+          <!-- Live rendered preview -->
+        </div>
+      </div>
+      <div class="modal-footer" style="background: white; border-top: 1px solid var(--slate-200); display: flex; justify-content: space-between; align-items: center;">
+        <div style="font-size: 12px; color: var(--slate-600);">
+          <span>Paper Format: <strong id="currentPaperFormatLabel">A4 Full Page</strong></span>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-secondary" onclick="closeInvoicePrintModal()">Close</button>
+          <button class="btn btn-primary" onclick="triggerActualPrint()" style="background: var(--emerald-600); font-size: 13px; font-weight: 700;">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+            <span>Print Invoice Now</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dedicated Offscreen / Media Print Target Area -->
+  <div id="printableInvoiceArea" style="display: none;"></div>
 
   <!-- ======================================================== -->
   <!-- MODAL: ADD PRODUCT                                       -->
@@ -1401,8 +1648,8 @@
           playScannerBeep(true);
           closeCheckoutModal();
           clearCart();
-          alert(`Sale Complete! Invoice #${result.sale.invoice_no} generated successfully.`);
           loadProducts(); // refresh stock
+          openInvoicePrintModal(result.sale, result.items, result.settings || storeSettings, 'A4');
         } else {
           alert('Error completing transaction.');
         }
@@ -1724,8 +1971,353 @@
       }
     }
 
-    function printInvoice(invNo) {
+    // ==========================================
+    // INVOICE PRINTING ENGINE (A4 & THERMAL)
+    // ==========================================
+    let currentPrintInvoiceData = null;
+    let currentPrintFormat = 'A4';
+
+    function setPrintFormat(format) {
+      currentPrintFormat = format;
+      const btnA4 = document.getElementById('btnSwitchA4');
+      const btnThermal = document.getElementById('btnSwitchThermal');
+      const formatLabel = document.getElementById('currentPaperFormatLabel');
+
+      if (format === 'A4') {
+        btnA4.style.background = 'var(--amber-400)';
+        btnA4.style.color = 'var(--navy-900)';
+        btnA4.style.fontWeight = '700';
+        btnThermal.style.background = 'transparent';
+        btnThermal.style.color = 'white';
+        btnThermal.style.fontWeight = '600';
+        if (formatLabel) formatLabel.textContent = 'A4 Full Page (210 x 297 mm)';
+      } else {
+        btnThermal.style.background = 'var(--amber-400)';
+        btnThermal.style.color = 'var(--navy-900)';
+        btnThermal.style.fontWeight = '700';
+        btnA4.style.background = 'transparent';
+        btnA4.style.color = 'white';
+        btnA4.style.fontWeight = '600';
+        if (formatLabel) formatLabel.textContent = '80mm / 58mm Continuous Roll';
+      }
+
+      if (currentPrintInvoiceData) {
+        const previewContainer = document.getElementById('modalInvoicePreviewContainer');
+        const printArea = document.getElementById('printableInvoiceArea');
+        const renderedHtml = format === 'A4'
+          ? renderA4InvoiceHtml(currentPrintInvoiceData.sale, currentPrintInvoiceData.items, currentPrintInvoiceData.settings)
+          : renderThermalReceiptHtml(currentPrintInvoiceData.sale, currentPrintInvoiceData.items, currentPrintInvoiceData.settings);
+
+        if (previewContainer) previewContainer.innerHTML = renderedHtml;
+        if (printArea) printArea.innerHTML = renderedHtml;
+      }
+    }
+
+    function renderA4InvoiceHtml(sale, items, settings) {
+      const cur = settings?.currency_symbol || storeSettings?.currency_symbol || 'Rs';
+      const storeName = settings?.receipt_header || storeSettings?.receipt_header || 'CHOUDHURY STORE POS';
+      const footerText = settings?.receipt_footer || storeSettings?.receipt_footer || 'Thank you for your business! Please retain this invoice for your records.';
+      const invoiceNo = sale.invoice_no || `INV-${sale.id || '0001'}`;
+      const saleDate = sale.created_at ? new Date(sale.created_at) : new Date();
+      const formattedDate = saleDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const formattedTime = saleDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      const customerName = sale.customer_name || 'Walking Customer';
+      const customerPhone = sale.customer_phone || (sale.customer_id === 1 ? 'N/A' : 'Direct Customer');
+      const cashier = sale.cashier_name || 'Admin / Terminal Staff';
+      const subtotal = parseFloat(sale.subtotal) || items.reduce((acc, it) => acc + (parseFloat(it.total_price || it.sale_price * it.quantity) || 0), 0);
+      const discount = parseFloat(sale.discount_amount) || 0;
+      const tax = parseFloat(sale.tax_amount) || 0;
+      const total = parseFloat(sale.total_amount) || subtotal;
+      const paid = parseFloat(sale.paid_amount) || total;
+      const due = Math.max(0, total - paid);
+      const change = parseFloat(sale.change_due) || Math.max(0, paid - total);
+
+      let itemsRows = '';
+      items.forEach((item, index) => {
+        const qty = parseFloat(item.quantity) || 1;
+        const rate = parseFloat(item.sale_price || item.unit_price) || 0;
+        const lineTotal = parseFloat(item.total_price) || (qty * rate);
+        itemsRows += `
+          <tr>
+            <td class="text-center" style="font-weight: 600; color: #64748b;">${index + 1}</td>
+            <td>
+              <div style="font-weight: 700; color: #0f172a;">${item.product_name || item.name || 'Product Item'}</div>
+              ${item.barcode ? `<div style="font-size: 10px; color: #64748b; font-family: monospace;">Barcode: ${item.barcode}</div>` : ''}
+            </td>
+            <td class="text-center" style="font-weight: 700;">${qty.toFixed(1)}</td>
+            <td class="text-right">${cur} ${rate.toFixed(2)}</td>
+            <td class="text-right" style="font-weight: 700; color: #0f172a;">${cur} ${lineTotal.toFixed(2)}</td>
+          </tr>
+        `;
+      });
+
+      return `
+        <div class="a4-tax-invoice">
+          <!-- Top Header -->
+          <div class="invoice-header">
+            <div class="store-info">
+              <h2>${storeName}</h2>
+              <p>Unified Commercial Point of Sale & Multi-Tenant Retail Terminal</p>
+              <p>Commercial Area, Main Boulevard • Support & Orders: +92-300-1234567</p>
+              <p>Verified Merchant Account: Official System Record</p>
+            </div>
+            <div class="badge-tax-invoice">
+              <div class="badge-title">TAX INVOICE</div>
+              <div class="badge-inv-num">${invoiceNo}</div>
+              <div style="font-size: 11px; margin-top: 4px; color: #cbd5e1;">${formattedDate} • ${formattedTime}</div>
+            </div>
+          </div>
+
+          <!-- Customer & Meta Section -->
+          <div class="meta-grid">
+            <div class="meta-block">
+              <h4>Billed To / Customer</h4>
+              <p style="font-weight: 700; font-size: 14px;">${customerName}</p>
+              <p>Contact: ${customerPhone}</p>
+              <p>Payment Mode: <strong style="color: #059669;">${sale.payment_method || 'CASH'}</strong></p>
+            </div>
+            <div class="meta-block" style="text-align: right;">
+              <h4>Invoice Metadata</h4>
+              <p>Invoice No: <strong>${invoiceNo}</strong></p>
+              <p>Cashier / Staff: <strong>${cashier}</strong></p>
+              <p>Status: <strong style="color: ${due > 0 ? '#e11d48' : '#059669'};">${due > 0 ? 'PARTIAL / BALANCE DUE' : 'PAID IN FULL'}</strong></p>
+            </div>
+          </div>
+
+          <!-- Items Table -->
+          <table class="invoice-table">
+            <thead>
+              <tr>
+                <th class="text-center" style="width: 45px;">S.#</th>
+                <th>Item Description</th>
+                <th class="text-center" style="width: 80px;">Qty</th>
+                <th class="text-right" style="width: 110px;">Unit Rate</th>
+                <th class="text-right" style="width: 130px;">Total (${cur})</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${itemsRows}
+            </tbody>
+          </table>
+
+          <!-- Financial Breakdown & Totals -->
+          <div class="summary-grid">
+            <div style="flex: 1; font-size: 11.5px; color: #64748b; line-height: 1.5; padding-right: 20px;">
+              <div style="font-weight: 700; color: #0f172a; margin-bottom: 4px;">Terms & Conditions:</div>
+              <div>${footerText}</div>
+              <div style="margin-top: 10px; font-weight: 600; color: #059669;">
+                ✓ Official Computer Generated Tax Invoice • No signature required.
+              </div>
+            </div>
+            <div class="totals-box">
+              <div class="totals-row">
+                <span>Subtotal Amount:</span>
+                <span style="font-weight: 600;">${cur} ${subtotal.toFixed(2)}</span>
+              </div>
+              ${discount > 0 ? `
+              <div class="totals-row" style="color: #e11d48;">
+                <span>Discount Allowed:</span>
+                <span>-${cur} ${discount.toFixed(2)}</span>
+              </div>` : ''}
+              ${tax > 0 ? `
+              <div class="totals-row">
+                <span>Sales Tax / GST:</span>
+                <span>+${cur} ${tax.toFixed(2)}</span>
+              </div>` : ''}
+              <div class="totals-grand">
+                <span>GRAND TOTAL:</span>
+                <span style="color: #fbbf24;">${cur} ${total.toFixed(2)}</span>
+              </div>
+              <div class="totals-row" style="margin-top: 6px; font-weight: 700; color: #059669;">
+                <span>Amount Paid:</span>
+                <span>${cur} ${paid.toFixed(2)}</span>
+              </div>
+              ${due > 0 ? `
+              <div class="totals-row" style="font-weight: 800; color: #e11d48;">
+                <span>Balance Due:</span>
+                <span>${cur} ${due.toFixed(2)}</span>
+              </div>` : `
+              <div class="totals-row" style="color: #64748b;">
+                <span>Change Returned:</span>
+                <span>${cur} ${change.toFixed(2)}</span>
+              </div>`}
+            </div>
+          </div>
+
+          <!-- Signature & Copyright Footer -->
+          <div class="invoice-footer-section">
+            <div style="font-size: 11px; color: #64748b;">
+              <div style="font-weight: 700; color: #0f172a;">CHOUDHURY POS APP</div>
+              <div>Enterprise Point of Sale & Retail Management System</div>
+              <div style="margin-top: 4px; font-weight: 600; color: #334155;">© 2027 CHOUDHURY POS. All Rights Reserved.</div>
+            </div>
+            <div class="signature-area">
+              <div class="signature-line"></div>
+              <div style="font-size: 11px; color: #64748b; font-weight: 600;">Authorized Signature / Official Stamp</div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderThermalReceiptHtml(sale, items, settings) {
+      const cur = settings?.currency_symbol || storeSettings?.currency_symbol || 'Rs';
+      const storeName = settings?.receipt_header || storeSettings?.receipt_header || 'CHOUDHURY STORE POS';
+      const footerText = settings?.receipt_footer || storeSettings?.receipt_footer || 'Thank you for your business!';
+      const invoiceNo = sale.invoice_no || `INV-${sale.id || '0001'}`;
+      const saleDate = sale.created_at ? new Date(sale.created_at) : new Date();
+      const formattedDate = saleDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+      const formattedTime = saleDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+      const customerName = sale.customer_name || 'Walking Customer';
+      const subtotal = parseFloat(sale.subtotal) || items.reduce((acc, it) => acc + (parseFloat(it.total_price || it.sale_price * it.quantity) || 0), 0);
+      const discount = parseFloat(sale.discount_amount) || 0;
+      const tax = parseFloat(sale.tax_amount) || 0;
+      const total = parseFloat(sale.total_amount) || subtotal;
+      const paid = parseFloat(sale.paid_amount) || total;
+      const due = Math.max(0, total - paid);
+      const change = parseFloat(sale.change_due) || Math.max(0, paid - total);
+
+      let itemsHtml = '';
+      items.forEach(it => {
+        const qty = parseFloat(it.quantity) || 1;
+        const rate = parseFloat(it.sale_price || it.unit_price) || 0;
+        const lineTotal = parseFloat(it.total_price) || (qty * rate);
+        itemsHtml += `
+          <div style="display: flex; justify-content: space-between; margin-bottom: 3px;">
+            <span style="font-weight: 600;">${(it.product_name || it.name || '').substring(0, 18)}</span>
+            <span>${cur} ${lineTotal.toFixed(2)}</span>
+          </div>
+          <div style="font-size: 10px; color: #555; margin-bottom: 4px;">
+            ${qty.toFixed(1)} @ ${cur} ${rate.toFixed(2)}
+          </div>
+        `;
+      });
+
+      return `
+        <div class="thermal-receipt">
+          <div class="center" style="font-weight: 800; font-size: 14px; text-transform: uppercase;">${storeName}</div>
+          <div class="center" style="font-size: 10px;">Commercial Market, Main Boulevard</div>
+          <div class="center" style="font-size: 10px;">Tel: +92-300-1234567</div>
+          <div class="divider"></div>
+          <div style="display: flex; justify-content: space-between;">
+            <span>Inv #: <strong>${invoiceNo}</strong></span>
+            <span>${sale.payment_method || 'CASH'}</span>
+          </div>
+          <div>Date: ${formattedDate} ${formattedTime}</div>
+          <div>Customer: ${customerName}</div>
+          <div>Cashier: ${sale.cashier_name || 'Admin'}</div>
+          <div class="divider"></div>
+          ${itemsHtml}
+          <div class="divider"></div>
+          <div style="display: flex; justify-content: space-between;">
+            <span>SUBTOTAL:</span>
+            <span>${cur} ${subtotal.toFixed(2)}</span>
+          </div>
+          ${discount > 0 ? `
+          <div style="display: flex; justify-content: space-between; color: red;">
+            <span>DISCOUNT:</span>
+            <span>-${cur} ${discount.toFixed(2)}</span>
+          </div>` : ''}
+          ${tax > 0 ? `
+          <div style="display: flex; justify-content: space-between;">
+            <span>TAX / GST:</span>
+            <span>+${cur} ${tax.toFixed(2)}</span>
+          </div>` : ''}
+          <div style="display: flex; justify-content: space-between; font-weight: 800; font-size: 13px; margin: 4px 0;">
+            <span>TOTAL:</span>
+            <span>${cur} ${total.toFixed(2)}</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span>PAID:</span>
+            <span>${cur} ${paid.toFixed(2)}</span>
+          </div>
+          ${due > 0 ? `
+          <div style="display: flex; justify-content: space-between; font-weight: 700; color: red;">
+            <span>BALANCE DUE:</span>
+            <span>${cur} ${due.toFixed(2)}</span>
+          </div>` : `
+          <div style="display: flex; justify-content: space-between;">
+            <span>CHANGE:</span>
+            <span>${cur} ${change.toFixed(2)}</span>
+          </div>`}
+          <div class="divider"></div>
+          <div class="center" style="font-size: 10px; margin-top: 6px;">${footerText}</div>
+          <div class="center" style="font-size: 9.5px; font-weight: 700; margin-top: 4px;">*** PRINTER VERIFIED ***</div>
+          <div class="center" style="font-size: 9px; color: #475569; margin-top: 4px;">© 2027 CHOUDHURY POS. All Rights Reserved.</div>
+        </div>
+      `;
+    }
+
+    function openInvoicePrintModal(sale, items, settings, initialFormat = 'A4') {
+      currentPrintInvoiceData = {
+        sale: sale || {},
+        items: items || [],
+        settings: settings || storeSettings
+      };
+      const titleEl = document.getElementById('printModalTitle');
+      if (titleEl) {
+        titleEl.textContent = `Invoice #${sale?.invoice_no || 'Document'} • Print Preview`;
+      }
+      setPrintFormat(initialFormat);
+      const modal = document.getElementById('invoicePrintModal');
+      if (modal) modal.classList.add('show');
+    }
+
+    function closeInvoicePrintModal() {
+      const modal = document.getElementById('invoicePrintModal');
+      if (modal) modal.classList.remove('show');
+    }
+
+    function triggerActualPrint() {
+      if (!currentPrintInvoiceData) return;
+      const printArea = document.getElementById('printableInvoiceArea');
+      if (printArea) {
+        printArea.innerHTML = currentPrintFormat === 'A4'
+          ? renderA4InvoiceHtml(currentPrintInvoiceData.sale, currentPrintInvoiceData.items, currentPrintInvoiceData.settings)
+          : renderThermalReceiptHtml(currentPrintInvoiceData.sale, currentPrintInvoiceData.items, currentPrintInvoiceData.settings);
+      }
       window.print();
+    }
+
+    async function printInvoice(invNo) {
+      try {
+        const res = await fetch(`/api/invoices/${encodeURIComponent(invNo)}`, {
+          headers: getAuthHeaders()
+        });
+        if (res.ok) {
+          const data = await res.json();
+          openInvoicePrintModal(data.sale, data.items, data.settings || storeSettings, 'A4');
+        } else {
+          // Fallback to minimal invoice if single endpoint isn't populated
+          openInvoicePrintModal({ invoice_no: invNo, total_amount: 0, payment_method: 'CASH' }, [], storeSettings, 'A4');
+        }
+      } catch (e) {
+        openInvoicePrintModal({ invoice_no: invNo, total_amount: 0, payment_method: 'CASH' }, [], storeSettings, 'A4');
+      }
+    }
+
+    function testPrintInvoice(format = 'A4') {
+      const cur = storeSettings?.currency_symbol || 'Rs';
+      const sampleSale = {
+        id: 1,
+        invoice_no: 'INV-2027-TEST01',
+        customer_name: 'Muhammad Tariq (Test)',
+        customer_phone: '+92-321-9876543',
+        cashier_name: 'Master Admin',
+        subtotal: 1500.0,
+        discount_amount: 50.0,
+        tax_amount: 0.0,
+        total_amount: 1450.0,
+        paid_amount: 1500.0,
+        change_due: 50.0,
+        payment_method: 'CASH',
+        created_at: new Date().toISOString()
+      };
+      const sampleItems = [
+        { product_name: 'Premium Basmati Rice 5kg', barcode: '896400123456', quantity: 1.0, sale_price: 950.0, total_price: 950.0 },
+        { product_name: 'Cooking Oil 1 Litre Pouch', barcode: '896400789012', quantity: 1.0, sale_price: 550.0, total_price: 550.0 }
+      ];
+      openInvoicePrintModal(sampleSale, sampleItems, storeSettings, format);
     }
 
     // Login Modal Handlers

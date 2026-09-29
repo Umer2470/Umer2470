@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const Database = require('better-sqlite3');
+const { DatabaseSync } = require('node:sqlite');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
@@ -19,9 +19,21 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --------------------------------------------------------------------------
-// DATABASE INITIALIZATION & SCHEMA
+// DATABASE INITIALIZATION & SCHEMA (Native Node 22 SQLite)
 // --------------------------------------------------------------------------
-const db = new Database(DB_PATH);
+const db = new DatabaseSync(DB_PATH);
+db.pragma = (str) => db.exec('PRAGMA ' + str);
+db.transaction = (fn) => (...args) => {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const res = fn(...args);
+    db.exec('COMMIT');
+    return res;
+  } catch (err) {
+    try { db.exec('ROLLBACK'); } catch (_) {}
+    throw err;
+  }
+};
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 

@@ -408,7 +408,7 @@ class PosSettingsManager private constructor(private val context: Context) {
             appendLine("NET TOTAL (Rs):                       190.00")
             appendLine(doubleDivider)
             appendLine("    *** PRINTER TEST SUCCESSFUL ***")
-            appendLine("© 2026 Quickro. All rights reserved.")
+            appendLine("© 2027 CHOUDHURY POS. All Rights Reserved.")
             appendLine("\n\n")
         }
     }

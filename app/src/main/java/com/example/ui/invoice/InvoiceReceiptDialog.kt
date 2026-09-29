@@ -168,14 +168,24 @@ fun InvoiceReceiptDialog(
                         IconButton(
                             onClick = {
                                 scope.launch {
-                                    val result = EscPosThermalPrinterService.quickRePrintReceipt(
-                                        context = context,
-                                        sale = sale,
-                                        items = items,
-                                        settings = effectiveSettings,
-                                        activePaymentQr = activePaymentQr
-                                    )
-                                    Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                    if (selectedFormat == InvoiceViewFormat.A4_TAX_INVOICE) {
+                                        val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice, PdfGenerator.ReceiptFormat.A4)
+                                        if (pdfFile != null) {
+                                            lastExportedFile = pdfFile
+                                            PdfGenerator.printPdfFile(context, pdfFile, "Tax_Invoice_${printableInvoice.meta.invoiceNumber}")
+                                        } else {
+                                            Toast.makeText(context, "Failed to render A4 invoice document", Toast.LENGTH_SHORT).show()
+                                        }
+                                    } else {
+                                        val result = EscPosThermalPrinterService.quickRePrintReceipt(
+                                            context = context,
+                                            sale = sale,
+                                            items = items,
+                                            settings = effectiveSettings,
+                                            activePaymentQr = activePaymentQr
+                                        )
+                                        Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                    }
                                 }
                             },
                             modifier = Modifier.testTag("receipt_print_button")
@@ -790,20 +800,30 @@ fun InvoiceReceiptDialog(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            // Quick Thermal Re-Print Button
+                            // Quick Print Button (A4 System Print or Thermal ESC/POS)
                             Button(
                                 onClick = {
                                     scope.launch {
                                         isQuickPrinting = true
                                         try {
-                                            val result = EscPosThermalPrinterService.quickRePrintReceipt(
-                                                context = context,
-                                                sale = sale,
-                                                items = items,
-                                                settings = effectiveSettings,
-                                                activePaymentQr = activePaymentQr
-                                            )
-                                            Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                            if (selectedFormat == InvoiceViewFormat.A4_TAX_INVOICE) {
+                                                val pdfFile = PdfGenerator.generateInvoicePdf(context, printableInvoice, PdfGenerator.ReceiptFormat.A4)
+                                                if (pdfFile != null) {
+                                                    lastExportedFile = pdfFile
+                                                    PdfGenerator.printPdfFile(context, pdfFile, "Tax_Invoice_${printableInvoice.meta.invoiceNumber}")
+                                                } else {
+                                                    Toast.makeText(context, "Failed to render A4 invoice document", Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else {
+                                                val result = EscPosThermalPrinterService.quickRePrintReceipt(
+                                                    context = context,
+                                                    sale = sale,
+                                                    items = items,
+                                                    settings = effectiveSettings,
+                                                    activePaymentQr = activePaymentQr
+                                                )
+                                                Toast.makeText(context, result.message, Toast.LENGTH_SHORT).show()
+                                            }
                                         } catch (e: Exception) {
                                             Toast.makeText(context, "Print error: ${e.message}", Toast.LENGTH_SHORT).show()
                                         } finally {
@@ -832,7 +852,11 @@ fun InvoiceReceiptDialog(
                                 } else {
                                     Icon(Icons.Default.Print, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(modifier = Modifier.width(4.dp))
-                                    Text("Quick Print", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        text = if (selectedFormat == InvoiceViewFormat.A4_TAX_INVOICE) "Print A4 Invoice" else "Thermal Print",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
                                 }
                             }
 

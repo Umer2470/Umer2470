@@ -371,7 +371,7 @@ fun InvoicePdfSettingsSection(
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Text(
-                                text = "© 2026 Quickro. All rights reserved.",
+                                text = "© 2027 CHOUDHURY POS. All Rights Reserved.",
                                 fontSize = 7.5.sp,
                                 color = Slate400,
                                 textAlign = TextAlign.Center,

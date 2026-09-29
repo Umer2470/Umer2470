@@ -311,7 +311,8 @@ object PdfGenerator {
             canvas.drawText(invoice.footerText, 40f, y, mutedPaint)
             y += 12f
         }
-        canvas.drawText("Thank you for choosing CH UMER Sanitary & Hardware Store. Official System Record.", 40f, y, mutedPaint)
+        val storeDisplayName = invoice.header.storeName.ifBlank { "CHOUDHURY POS" }
+        canvas.drawText("Thank you for choosing $storeDisplayName. © 2027 CHOUDHURY POS. All Rights Reserved.", 40f, y, mutedPaint)
 
         document.finishPage(page)
 

@@ -121,3 +121,7 @@ dependencies {
   "ksp"(libs.androidx.room.compiler)
   "ksp"(libs.moshi.kotlin.codegen)
 }
+
+tasks.matching { it.name.contains("ksp", ignoreCase = true) && it.name.contains("UnitTest", ignoreCase = true) }.configureEach {
+  enabled = false
+}

@@ -285,13 +285,13 @@ fun AboutAndSupportSection(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "© 2026 Quickro. All rights reserved.",
+                    text = "© 2027 CHOUDHURY POS. All Rights Reserved.",
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     color = Navy900
                 )
                 Text(
-                    text = "Chaudhry POS App • Offline-First Retail & Commercial Management",
+                    text = "CHOUDHURY POS App • Offline-First Retail & Commercial Management",
                     fontSize = 11.sp,
                     color = Slate600,
                     textAlign = TextAlign.Center
@@ -321,7 +321,7 @@ fun AboutAndSupportSection(
                         Icon(Icons.Default.Storefront, contentDescription = null, tint = Navy900, modifier = Modifier.size(20.dp))
                     }
                     Column {
-                        Text("About Chaudhry POS", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
+                        Text("About CHOUDHURY POS", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Navy900)
                         Text("Commercial Offline Terminal", fontSize = 11.sp, color = Navy500)
                     }
                 }
@@ -331,12 +331,12 @@ fun AboutAndSupportSection(
                     modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    DetailRow("Application Name", "Chaudhry POS App")
+                    DetailRow("Application Name", "CHOUDHURY POS App")
                     DetailRow("Version", "2.4.0")
                     DetailRow("Build Code", "42 (Release)")
                     DetailRow("Architecture", "Kotlin Compose Offline-First Room")
                     DetailRow("Developer", "Store Management Solutions / Quickro")
-                    DetailRow("Copyright", "© 2026 Quickro. All rights reserved.")
+                    DetailRow("Copyright", "© 2027 CHOUDHURY POS")
                     DetailRow("Support Email", settingsManager.getSupportEmail())
                     DetailRow("WhatsApp", settingsManager.getSupportWhatsapp())
 
@@ -409,7 +409,7 @@ fun AboutAndSupportSection(
                         color = Navy800
                     )
                     Text(
-                        text = "© 2026 Quickro. All rights reserved.",
+                        text = "© 2027 CHOUDHURY POS. All Rights Reserved.",
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         color = Slate600
