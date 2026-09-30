@@ -1,0 +1,9 @@
+{
+  "name": "choudhury-pos",
+  "productName": "CHOUDHURY POS",
+  "version": "8.0.0",
+  "description": "CHOUDHURY POS — Enterprise Business Management System (Windows Edition)",
+  "main": "main.js",
+  "author": "CHOUDHURY POS Team",
+  "license": "Proprietary"
+}

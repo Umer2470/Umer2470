@@ -297,6 +297,29 @@ fun AppNavigation(
     val currentRoute = navBackStackEntry?.destination?.route
     val cart by viewModel.cart.collectAsState()
     val cartItemCount = cart.sumOf { it.quantity }.toInt()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val handleRouteNavigate: (String) -> Unit = { route ->
+        if (route == "open_web_portal") {
+            val url = com.example.util.PosSettingsManager.getInstance(context).getPortalUrl()
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "Could not open browser: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else if (route == "download_windows_app") {
+            val url = com.example.util.PosSettingsManager.getInstance(context).getWindowsDownloadUrl()
+            try {
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                android.widget.Toast.makeText(context, "Could not open browser: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            navController.navigate(route)
+        }
+    }
 
     if (!isActivated) {
         CustomerActivationScreen(
@@ -340,7 +363,7 @@ fun AppNavigation(
                 composable(Screen.Dashboard.route) {
                     DashboardScreen(
                         viewModel = viewModel,
-                        onNavigate = { route -> navController.navigate(route) }
+                        onNavigate = handleRouteNavigate
                     )
                 }
                 composable(Screen.Pos.route) {

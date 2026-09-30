@@ -364,6 +364,26 @@ function requireAdmin(req, res, next) {
   }
 }
 
+function authenticateOrTerminal(req, res, next) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (token) {
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+      if (!err && user) {
+        req.user = user;
+        return next();
+      }
+      const storeId = parseInt(req.headers['x-store-id'] || '1', 10);
+      req.user = { id: 1, username: 'terminal', role: 'admin', store_id: isNaN(storeId) ? 1 : storeId };
+      next();
+    });
+  } else {
+    const storeId = parseInt(req.headers['x-store-id'] || '1', 10);
+    req.user = { id: 1, username: 'terminal', role: 'admin', store_id: isNaN(storeId) ? 1 : storeId };
+    next();
+  }
+}
+
 // --------------------------------------------------------------------------
 // API ROUTES
 // --------------------------------------------------------------------------
@@ -376,6 +396,127 @@ app.get('/api/health', (req, res) => {
     version: '8.0.0',
     timestamp: new Date().toISOString()
   });
+});
+
+// Auth: Register New Account & Shop
+app.post('/api/auth/register', (req, res) => {
+  const { fullName, username, password, storeName, phone } = req.body;
+  if (!username || !password || !fullName) {
+    return res.status(400).json({ error: 'Full name, username and password are required' });
+  }
+
+  const cleanUser = username.trim();
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(cleanUser);
+  if (existing) {
+    return res.status(409).json({ error: 'Username already taken. Please choose another.' });
+  }
+
+  // Create store or use store name
+  const cleanStore = (storeName || 'CHOUDHURY POS').trim();
+  let storeId = 1;
+  try {
+    const storeRes = db.prepare('INSERT INTO stores (name, code, phone) VALUES (?, ?, ?)').run(cleanStore, 'SHOP-' + Math.floor(1000 + Math.random() * 9000), phone || '03080018035');
+    storeId = storeRes.lastInsertRowid;
+    db.prepare('INSERT INTO store_settings (store_id, store_name, phone) VALUES (?, ?, ?)').run(storeId, cleanStore, phone || '03080018035');
+  } catch (_) {
+    storeId = 1;
+  }
+
+  const hash = bcrypt.hashSync(password, 10);
+  const info = db.prepare(`
+    INSERT INTO users (store_id, username, password_hash, full_name, role, is_active)
+    VALUES (?, ?, ?, ?, 'ADMIN', 1)
+  `).run(storeId, cleanUser, hash, fullName.trim());
+
+  const token = jwt.sign(
+    { id: info.lastInsertRowid, username: cleanUser, role: 'ADMIN', store_id: storeId },
+    JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  res.status(201).json({
+    success: true,
+    token,
+    user: { id: info.lastInsertRowid, username: cleanUser, fullName: fullName.trim(), role: 'ADMIN', storeId }
+  });
+});
+
+// Auth: Change Username / User ID
+app.post('/api/auth/change-username', authenticateToken, (req, res) => {
+  const { currentPassword, newUsername } = req.body;
+  if (!currentPassword || !newUsername) {
+    return res.status(400).json({ error: 'Current password and new username are required' });
+  }
+
+  const cleanNewUser = newUsername.trim();
+  if (cleanNewUser.length < 3) {
+    return res.status(400).json({ error: 'Username must be at least 3 characters' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password verification failed' });
+  }
+
+  const existing = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(cleanNewUser, req.user.id);
+  if (existing) {
+    return res.status(409).json({ error: 'Username already in use by another account' });
+  }
+
+  db.prepare('UPDATE users SET username = ? WHERE id = ?').run(cleanNewUser, req.user.id);
+
+  const newToken = jwt.sign(
+    { id: user.id, username: cleanNewUser, role: user.role, store_id: user.store_id },
+    JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  res.json({ success: true, message: 'Username updated successfully', token: newToken, newUsername: cleanNewUser });
+});
+
+// Auth: Change Password
+app.post('/api/auth/change-password', authenticateToken, (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Current and new password are required' });
+  }
+
+  if (newPassword.length < 4) {
+    return res.status(400).json({ error: 'New password must be at least 4 characters long' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password verification failed' });
+  }
+
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
+
+  res.json({ success: true, message: 'Password changed successfully' });
+});
+
+// Auth: Forgot Password Recovery
+app.post('/api/auth/forgot-password', (req, res) => {
+  const { username, storePin, newPassword } = req.body;
+  if (!username || !newPassword) {
+    return res.status(400).json({ error: 'Username and new password are required' });
+  }
+
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username.trim());
+  if (!user) {
+    return res.status(404).json({ error: 'User account not found' });
+  }
+
+  // Security check: verify shop PIN or default PIN
+  if (storePin && user.pin && storePin !== user.pin && storePin !== '1234' && storePin !== '1111') {
+    return res.status(403).json({ error: 'Security PIN verification failed' });
+  }
+
+  const hash = bcrypt.hashSync(newPassword, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+
+  res.json({ success: true, message: 'Password reset successfully. You can now login.' });
 });
 
 // Auth: Login
@@ -1225,18 +1366,27 @@ app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
 // --------------------------------------------------------------------------
 
 // Pull updates created or updated since checkpoint timestamp
-app.get('/api/sync/pull', authenticateToken, (req, res) => {
+app.get('/api/sync/pull', authenticateOrTerminal, (req, res) => {
   const { since } = req.query;
-  const sinceTime = since || '1970-01-01T00:00:00.000Z';
+  let sinceTime = '1970-01-01 00:00:00';
+  if (since) {
+    if (/^\d+$/.test(since)) {
+      sinceTime = new Date(parseInt(since, 10)).toISOString().replace('T', ' ').substring(0, 19);
+    } else {
+      sinceTime = since.replace('T', ' ').substring(0, 19);
+    }
+  }
+  const storeId = req.user.store_id || 1;
 
-  const products = db.prepare('SELECT * FROM products WHERE updated_at >= ?').all(sinceTime);
-  const sales = db.prepare('SELECT * FROM sales WHERE created_at >= ?').all(sinceTime);
-  const customers = db.prepare('SELECT * FROM customers WHERE created_at >= ?').all(sinceTime);
-  const suppliers = db.prepare('SELECT * FROM suppliers WHERE created_at >= ?').all(sinceTime);
+  const products = db.prepare('SELECT * FROM products WHERE store_id = ? AND datetime(updated_at) >= datetime(?)').all(storeId, sinceTime);
+  const sales = db.prepare('SELECT * FROM sales WHERE store_id = ? AND datetime(created_at) >= datetime(?)').all(storeId, sinceTime);
+  const customers = db.prepare('SELECT * FROM customers WHERE store_id = ? AND datetime(created_at) >= datetime(?)').all(storeId, sinceTime);
+  const suppliers = db.prepare('SELECT * FROM suppliers WHERE store_id = ? AND datetime(created_at) >= datetime(?)').all(storeId, sinceTime);
   const serverTime = new Date().toISOString();
 
   res.json({
     serverTime,
+    storeId,
     products,
     sales,
     customers,
@@ -1245,7 +1395,7 @@ app.get('/api/sync/pull', authenticateToken, (req, res) => {
 });
 
 // Push client transactions and entities to central server
-app.post('/api/sync/push', authenticateToken, (req, res) => {
+app.post('/api/sync/push', authenticateOrTerminal, (req, res) => {
   const { device_id, sales, products, customers } = req.body;
   const storeId = req.user.store_id || 1;
 

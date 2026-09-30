@@ -67,13 +67,19 @@ class PosSettingsManager private constructor(private val context: Context) {
     fun getSupportWhatsapp(): String = prefs.getString(KEY_SUPPORT_WHATSAPP, "03080018035") ?: "03080018035"
     fun setSupportWhatsapp(number: String) = prefs.edit().putString(KEY_SUPPORT_WHATSAPP, number.trim()).apply()
 
-    fun getPortalUrl(): String = prefs.getString(KEY_PORTAL_URL, "") ?: ""
+    fun getPortalUrl(): String {
+        val saved = prefs.getString(KEY_PORTAL_URL, "")
+        return if (!saved.isNullOrBlank()) saved else "https://ais-pre-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app"
+    }
     fun setPortalUrl(url: String) = prefs.edit().putString(KEY_PORTAL_URL, url.trim()).apply()
 
     fun getIosDownloadUrl(): String = prefs.getString(KEY_IOS_DOWNLOAD_URL, "") ?: ""
     fun setIosDownloadUrl(url: String) = prefs.edit().putString(KEY_IOS_DOWNLOAD_URL, url.trim()).apply()
 
-    fun getWindowsDownloadUrl(): String = prefs.getString(KEY_WINDOWS_DOWNLOAD_URL, "") ?: ""
+    fun getWindowsDownloadUrl(): String {
+        val saved = prefs.getString(KEY_WINDOWS_DOWNLOAD_URL, "")
+        return if (!saved.isNullOrBlank()) saved else "https://ais-pre-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app/downloads/choudhury-pos-windows-x64.zip"
+    }
     fun setWindowsDownloadUrl(url: String) = prefs.edit().putString(KEY_WINDOWS_DOWNLOAD_URL, url.trim()).apply()
 
     fun getTermsOfServiceUrl(): String = prefs.getString(KEY_TOS_URL, "") ?: ""

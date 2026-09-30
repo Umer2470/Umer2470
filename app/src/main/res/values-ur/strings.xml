@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">چودھری پوائنٹ آف سیل</string>
+    <string name="title_dashboard">ڈیش بورڈ</string>
+    <string name="title_pos">پوائنٹ آف سیل</string>
+    <string name="title_inventory">انوینٹری و اسٹاک</string>
+    <string name="title_invoices">رسیدیں اور بل</string>
+    <string name="title_customers">گاہک اور کھاتہ</string>
+    <string name="title_suppliers">سپلائرز</string>
+    <string name="title_reports">مالیاتی رپورٹس</string>
+    <string name="title_settings">ترتیبات و پرنٹر</string>
+    <string name="title_cloud_sync">کلاؤڈ سنک</string>
+    <string name="title_web_portal">لائیو ویب پورٹل</string>
+    <string name="title_windows_app">ونڈوز ڈیسک ٹاپ ایپ</string>
+    <string name="action_search">تلاش کریں...</string>
+    <string name="action_pay">ادائیگی</string>
+    <string name="action_clear">صاف کریں</string>
+    <string name="action_hold">ہولڈ بل</string>
+    <string name="action_print">پرنٹ رسید</string>
+    <string name="label_total">کل رقم</string>
+    <string name="label_subtotal">ذیلی رقم</string>
+    <string name="label_tax">ٹیکس</string>
+    <string name="label_discount">رعایت</string>
+    <string name="label_cash">نقد رقم</string>
+    <string name="label_card">کارڈ</string>
+    <string name="status_online">آن لائن</string>
+    <string name="status_offline">آف لائن محفوظ</string>
+</resources>

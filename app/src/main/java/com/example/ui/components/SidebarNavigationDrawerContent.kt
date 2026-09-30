@@ -80,8 +80,40 @@ fun SidebarNavigationDrawerContent(
         }
     }
 
-    // 6 Main Folders with complete child structures
+    // Main Folders with complete child structures
     val folders = listOf(
+        // 0. CLOUD & CONNECTED PLATFORMS
+        NavFolder(
+            id = "cloud_platforms",
+            title = "🌐 Web Portal & Windows Desktop",
+            icon = Icons.Default.CloudSync,
+            color = Emerald600,
+            bgColor = Emerald50,
+            items = listOf(
+                NavChildItem(
+                    title = "🌐 Open Live Web POS Portal",
+                    subtitle = "Browser terminal & centralized management",
+                    icon = Icons.Default.Language,
+                    route = "open_web_portal",
+                    testTag = "drawer_item_open_web_portal"
+                ),
+                NavChildItem(
+                    title = "💻 Download Windows Desktop App",
+                    subtitle = "Install CHOUDHURY POS on Windows PC",
+                    icon = Icons.Default.DesktopWindows,
+                    route = "download_windows_app",
+                    testTag = "drawer_item_download_windows"
+                ),
+                NavChildItem(
+                    title = "🔄 Central Cloud Sync Center",
+                    subtitle = "Synchronize local sales & inventory",
+                    icon = Icons.Default.Sync,
+                    route = "backup_recovery",
+                    testTag = "drawer_item_cloud_sync"
+                )
+            )
+        ),
+
         // 1. STORE & BUSINESS
         NavFolder(
             id = "store_business",

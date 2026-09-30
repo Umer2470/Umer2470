@@ -79,14 +79,6 @@
     .nav-item.active { background: rgba(16, 185, 129, 0.15); color: #34d399; border-left-color: var(--emerald-500); font-weight: 600; }
     .nav-item svg { width: 18px; height: 18px; flex-shrink: 0; }
     
-    /* RTL Layout Adaptation */
-    html[dir="rtl"] { font-family: 'Noto Nastaliq Urdu', 'Segoe UI', Tahoma, sans-serif; }
-    html[dir="rtl"] aside.sidebar { border-right: none; border-left: 1px solid var(--navy-700); }
-    html[dir="rtl"] .nav-item { border-left: none; border-right: 3px solid transparent; }
-    html[dir="rtl"] .nav-item.active { border-right-color: var(--emerald-500); }
-    html[dir="rtl"] .search-input-box input { padding: 0 40px 0 14px; }
-    html[dir="rtl"] .search-input-box svg { left: auto; right: 12px; }
-    
     /* Content Area */
     main.main-viewport { flex: 1; overflow-y: auto; background: var(--slate-100); display: flex; flex-direction: column; position: relative; }
     
@@ -427,22 +419,16 @@
     </div>
 
     <div class="nav-actions">
-      <!-- Language Switcher Button (Urdu / English) -->
-      <button class="btn-header" id="btnLangToggle" onclick="toggleLanguage()" style="background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); font-weight: 700; color: #93c5fd;" title="Switch Language / زبان تبدیل کریں">
-        <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
-        <span id="langBtnText">اردو / EN</span>
-      </button>
-
       <!-- Connectivity & Sync Badge -->
       <span class="badge badge-online" id="networkBadge">
         <span style="width: 7px; height: 7px; background: #34d399; border-radius: 50%;"></span>
-        <span id="networkBadgeText">Online</span>
+        <span>Online</span>
       </span>
 
-      <!-- Download Apps Button -->
-      <button class="btn-header" onclick="showModule('download')" style="background: rgba(16, 185, 129, 0.25); border-color: rgba(16, 185, 129, 0.5); font-weight: 700; color: #a7f3d0;" title="Download Android APK & Windows Setup">
+      <!-- Download Android App Button -->
+      <button class="btn-header" onclick="showModule('download')" style="background: rgba(16, 185, 129, 0.25); border-color: rgba(16, 185, 129, 0.5); font-weight: 700; color: #a7f3d0;" title="Download Android App APK">
         <svg width="15" height="15" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
-        <span id="headerDownloadText">Get Apps</span>
+        <span>Download App</span>
       </button>
 
       <!-- Pending Sync Button -->
@@ -953,14 +939,9 @@
               </p>
               
               <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
-                <a href="/downloads/choudhury-pos-windows-x64.zip" download="choudhury-pos-windows-x64.zip" class="btn" style="padding: 14px 28px; font-size: 15px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(135deg, #0284c7, #0369a1); color: white; box-shadow: 0 4px 14px rgba(2, 132, 199, 0.4); border: none; border-radius: 10px; cursor: pointer;">
-                  <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.801"/></svg>
-                  <span>Download Windows App (164 MB)</span>
-                </a>
-
                 <a href="/downloads/choudhury-pos-app.apk" download="choudhury-pos-app.apk" class="btn" style="padding: 14px 28px; font-size: 15px; font-weight: 700; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; background: linear-gradient(135deg, var(--emerald-500), var(--emerald-600)); color: white; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4); border: none; border-radius: 10px; cursor: pointer;">
                   <svg width="20" height="20" fill="currentColor" viewBox="0 0 24 24"><path d="M17.523 15.3414c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.551 0 .9993.4482.9993.9993.0001.5511-.4483.9997-.9993.9997m-11.046 0c-.5511 0-.9993-.4486-.9993-.9997s.4482-.9993.9993-.9993c.5511 0 .9993.4482.9993.9993 0 .5511-.4482.9997-.9993.9997m11.4045-6.02l1.996-3.456c.1051-.182.0426-.4147-.1394-.52-.182-.1051-.4146-.0426-.52.1394l-2.023 3.5042C15.5866 8.351 13.856 8 12 8s-3.5866.351-5.1945.989L4.7825 5.4848c-.1054-.182-.338-.2445-.52-.1394-.182.1053-.2445.338-.1394.52l1.996 3.456C2.6953 11.1613.4312 14.856.0273 19.3496h23.9454c-.404-4.4936-2.668-8.1883-6.0907-10.0282"/></svg>
-                  <span>Download Android APK (77 MB)</span>
+                  <span>Download Android APK (51 MB)</span>
                 </a>
 
                 <button class="btn btn-secondary" onclick="showModule('pos')" style="padding: 14px 22px; font-size: 14px; font-weight: 600; color: white; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 10px; cursor: pointer;">
@@ -2446,33 +2427,8 @@
       }
     }
 
-    let currentLang = localStorage.getItem('pos_language') || 'en';
-
-    function applyLanguage(lang) {
-      currentLang = lang;
-      localStorage.setItem('pos_language', lang);
-      const isUrdu = lang === 'ur';
-      document.documentElement.dir = isUrdu ? 'rtl' : 'ltr';
-      document.documentElement.lang = isUrdu ? 'ur' : 'en';
-
-      const toggleBtn = document.getElementById('langBtnText');
-      if (toggleBtn) toggleBtn.innerText = isUrdu ? 'English / انگریزی' : 'اردو / EN';
-      const syncText = document.getElementById('syncText');
-      if (syncText) syncText.innerText = isUrdu ? 'سنک' : 'Sync';
-      const getApps = document.getElementById('headerDownloadText');
-      if (getApps) getApps.innerText = isUrdu ? 'ایپس ڈاؤن لوڈ' : 'Get Apps';
-      const netText = document.getElementById('networkBadgeText');
-      if (netText) netText.innerText = isUrdu ? 'آن لائن' : 'Online';
-    }
-
-    function toggleLanguage() {
-      const next = currentLang === 'en' ? 'ur' : 'en';
-      applyLanguage(next);
-    }
-
     // Start App on Load
     window.addEventListener('DOMContentLoaded', () => {
-      applyLanguage(currentLang);
       const token = localStorage.getItem('pos_token');
       if (!token) {
         document.getElementById('loginModal').style.display = 'flex';
