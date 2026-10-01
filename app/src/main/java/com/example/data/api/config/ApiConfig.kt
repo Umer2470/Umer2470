@@ -3,7 +3,12 @@ package com.example.data.api.config
 import android.content.Context
 
 object ApiConfig {
-    const val DEFAULT_DEVELOPER_SERVER_URL = "https://ais-pre-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app/api/v1/"
+    // Permanent Configured Production Base URL (for standalone production hosting)
+    const val DEFAULT_PRODUCTION_SERVER_URL = "https://pos-server.choudhurypos.com/api/v1/"
+
+    // Google AI Studio Development Session Host
+    const val DEFAULT_DEVELOPER_SERVER_URL = "https://ais-dev-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app/api/v1/"
+
     const val CONNECT_TIMEOUT_SECONDS = 15L
     const val READ_TIMEOUT_SECONDS = 15L
     const val WRITE_TIMEOUT_SECONDS = 15L

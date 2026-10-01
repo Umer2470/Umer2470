@@ -6,9 +6,15 @@ const { DatabaseSync } = require('node:sqlite');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
-const PORT = 3000;
-const JWT_SECRET = process.env.JWT_SECRET || 'choudhury-pos-secret-key-2026';
-const DB_PATH = path.join(__dirname, 'pos_central.db');
+const PORT = process.env.APP_PORT || (process.env.DOCKER_PRODUCTION ? (process.env.PORT || 8080) : 3000);
+const JWT_SECRET = process.env.JWT_SECRET || 'choudhury-pos-enterprise-secret-key-2026';
+const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'pos_central.db');
+
+// Ensure database directory exists if mounted via volume
+const dbDir = path.dirname(DB_PATH);
+if (!fs.existsSync(dbDir)) {
+  fs.mkdirSync(dbDir, { recursive: true });
+}
 
 const app = express();
 app.use(cors());
@@ -61,6 +67,7 @@ function initDb() {
       store_id INTEGER REFERENCES stores(id),
       pin TEXT,
       is_active INTEGER DEFAULT 1,
+      must_change_password INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
@@ -270,6 +277,11 @@ function initDb() {
     );
   `);
 
+  // Migration: Ensure must_change_password column exists on existing databases
+  try {
+    db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
+  } catch (_) {}
+
   // Seed default data if empty
   const storeCount = db.prepare('SELECT count(*) as cnt FROM stores').get().cnt;
   if (storeCount === 0) {
@@ -283,10 +295,10 @@ function initDb() {
     const cashierHash = bcrypt.hashSync('1234', salt);
 
     db.prepare(`
-      INSERT INTO users (username, password_hash, full_name, role, store_id, pin)
+      INSERT INTO users (username, password_hash, full_name, role, store_id, pin, must_change_password)
       VALUES 
-        ('admin', ?, 'System Administrator', 'SUPER_ADMIN', 1, '1234'),
-        ('cashier1', ?, 'Senior Cashier', 'CASHIER', 1, '1111')
+        ('admin', ?, 'System Administrator', 'SUPER_ADMIN', 1, '1234', 1),
+        ('cashier1', ?, 'Senior Cashier', 'CASHIER', 1, '1111', 1)
     `).run(adminHash, cashierHash);
 
     db.prepare(`
@@ -352,6 +364,15 @@ function authenticateToken(req, res, next) {
   jwt.verify(token, JWT_SECRET, (err, user) => {
     if (err) return res.status(403).json({ error: 'Invalid or expired session' });
     req.user = user;
+
+    // Security enforcement: Block operational APIs until default password is changed
+    if (user.must_change_password && req.path !== '/api/auth/change-password' && req.path !== '/api/auth/me') {
+      return res.status(403).json({
+        error: 'Initial password change required before accessing system functions',
+        code: 'MUST_CHANGE_PASSWORD'
+      });
+    }
+
     next();
   });
 }
@@ -491,9 +512,15 @@ app.post('/api/auth/change-password', authenticateToken, (req, res) => {
   }
 
   const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.user.id);
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, req.user.id);
 
-  res.json({ success: true, message: 'Password changed successfully' });
+  const updatedToken = jwt.sign(
+    { id: req.user.id, username: req.user.username, role: req.user.role, store_id: req.user.store_id, must_change_password: false },
+    JWT_SECRET,
+    { expiresIn: '24h' }
+  );
+
+  res.json({ success: true, message: 'Password changed successfully', token: updatedToken });
 });
 
 // Auth: Forgot Password Recovery
@@ -514,7 +541,7 @@ app.post('/api/auth/forgot-password', (req, res) => {
   }
 
   const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, user.id);
 
   res.json({ success: true, message: 'Password reset successfully. You can now login.' });
 });
@@ -533,9 +560,10 @@ app.post('/api/auth/login', (req, res) => {
 
   const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(user.store_id || 1);
   const settings = db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(user.store_id || 1);
+  const mustChange = !!user.must_change_password;
 
   const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role, store_id: user.store_id },
+    { id: user.id, username: user.username, role: user.role, store_id: user.store_id, must_change_password: mustChange },
     JWT_SECRET,
     { expiresIn: '24h' }
   );
@@ -547,7 +575,8 @@ app.post('/api/auth/login', (req, res) => {
       username: user.username,
       fullName: user.full_name,
       role: user.role,
-      storeId: user.store_id
+      storeId: user.store_id,
+      mustChangePassword: mustChange
     },
     store,
     settings
@@ -949,7 +978,7 @@ app.post('/api/sales', authenticateToken, (req, res) => {
 });
 
 // Invoices: List Invoices
-app.get('/api/invoices', authenticateToken, (req, res) => {
+app.get(['/api/invoices', '/api/sales'], authenticateToken, (req, res) => {
   const storeId = req.user.store_id || 1;
   const { query, limit = 50 } = req.query;
 
@@ -1470,9 +1499,67 @@ app.post('/api/sync/push', authenticateOrTerminal, (req, res) => {
   });
 });
 
-// Fallback to SPA index.html for frontend routing
+// Catch-all 404 for unknown API endpoints
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'API endpoint not found', path: req.originalUrl });
+});
+
+// Catch-all 404 for missing downloads (never disguise as HTML)
+app.use('/downloads', (req, res) => {
+  res.status(404).type('text/plain').send('File not found: ' + req.originalUrl);
+});
+
+// SPA routing: only serve index.html for recognized application views
+const validSpaRoutes = [
+  '/',
+  '/pos',
+  '/dashboard',
+  '/products',
+  '/invoices',
+  '/customers',
+  '/expenses',
+  '/shifts',
+  '/reports',
+  '/sync',
+  '/settings',
+  '/users',
+  '/download',
+  '/login'
+];
+
+validSpaRoutes.forEach(route => {
+  app.get(route, (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  });
+});
+
+// Explicit 404 for any other unknown route
 app.use((req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.status(404).type('text/html').send(`
+    <!DOCTYPE html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8">
+        <title>404 Page Not Found — CHOUDHURY POS</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; }
+          .card { text-align: center; padding: 40px; background: #1e293b; border-radius: 12px; border: 1px solid #334155; max-width: 480px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+          h1 { color: #f43f5e; margin: 0 0 10px; font-size: 24px; font-weight: 800; }
+          p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
+          a { display: inline-block; background: #10b981; color: white; padding: 10px 22px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: background 0.2s; }
+          a:hover { background: #059669; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <h1>404 — Page Not Found</h1>
+          <p>The requested URL <code>${req.originalUrl}</code> was not found on this server.</p>
+          <a href="/dashboard">Open Web POS Terminal</a>
+        </div>
+      </body>
+    </html>
+  `);
 });
 
 // Start Server

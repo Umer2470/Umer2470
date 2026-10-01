@@ -69,7 +69,7 @@ class PosSettingsManager private constructor(private val context: Context) {
 
     fun getPortalUrl(): String {
         val saved = prefs.getString(KEY_PORTAL_URL, "")
-        return if (!saved.isNullOrBlank()) saved else "https://ais-pre-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app"
+        return if (!saved.isNullOrBlank()) saved else "https://ais-dev-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app"
     }
     fun setPortalUrl(url: String) = prefs.edit().putString(KEY_PORTAL_URL, url.trim()).apply()
 
@@ -78,7 +78,7 @@ class PosSettingsManager private constructor(private val context: Context) {
 
     fun getWindowsDownloadUrl(): String {
         val saved = prefs.getString(KEY_WINDOWS_DOWNLOAD_URL, "")
-        return if (!saved.isNullOrBlank()) saved else "https://ais-pre-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app/downloads/choudhury-pos-windows-x64.zip"
+        return if (!saved.isNullOrBlank()) saved else "https://ais-dev-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app/downloads/choudhury-pos-windows-x64.zip"
     }
     fun setWindowsDownloadUrl(url: String) = prefs.edit().putString(KEY_WINDOWS_DOWNLOAD_URL, url.trim()).apply()
 

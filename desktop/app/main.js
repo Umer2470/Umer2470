@@ -4,7 +4,7 @@ const fs = require('fs');
 
 let mainWindow;
 
-const CLOUD_URL = 'https://ais-pre-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app';
+const CLOUD_URL = process.env.POS_SERVER_URL || 'https://ais-dev-repstbphrkqk34xvfwxoji-454250663559.asia-east1.run.app';
 const LOCAL_FALLBACK_FILE = path.join(__dirname, 'public', 'index.html');
 
 function createWindow() {

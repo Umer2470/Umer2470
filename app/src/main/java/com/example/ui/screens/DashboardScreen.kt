@@ -86,8 +86,6 @@ fun DashboardScreen(
 
     val quickActions = listOf(
         QuickActionItem("Sales POS", Icons.Default.PointOfSale, Navy900, "pos"),
-        QuickActionItem("🌐 Web Portal", Icons.Default.Language, Blue600, "open_web_portal"),
-        QuickActionItem("💻 Windows App", Icons.Default.DesktopWindows, Teal600, "download_windows_app"),
         QuickActionItem("Invoices", Icons.Default.ReceiptLong, Blue600, "invoice"),
         QuickActionItem("Inventory", Icons.Default.Inventory2, Emerald600, "inventory"),
         QuickActionItem("Barcode & Labels", Icons.Default.QrCodeScanner, Emerald700, "barcode_labels"),

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -118,6 +119,158 @@ fun AboutAndSupportSection(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // PLATFORM & DOWNLOADS / پلیٹ فارم اور ڈاؤن لوڈز
+        SectionHeader(
+            title = "Platform & Downloads / پلیٹ فارم اور ڈاؤن لوڈز",
+            subtitle = "Cloud Web Portal, Windows Desktop package, Android APK & connection status"
+        )
+
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("platform_downloads_card"),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Connection Status & Version
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Emerald50, RoundedCornerShape(8.dp))
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(10.dp)
+                                .background(Emerald600, CircleShape)
+                        )
+                        Column {
+                            Text(
+                                text = "Central Cloud Backend Active",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Emerald900
+                            )
+                            Text(
+                                text = "Engine v8.0.0 • Multi-Shop Isolated",
+                                fontSize = 11.sp,
+                                color = Emerald700
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Android v1.0",
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 11.sp,
+                        color = Navy700
+                    )
+                }
+
+                // 1. Open Web Portal
+                Button(
+                    onClick = {
+                        val portalUrl = settingsManager.getPortalUrl()
+                        try {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(portalUrl)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Could not open browser: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("btn_open_web_portal"),
+                    colors = ButtonDefaults.buttonColors(containerColor = Navy900),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(vertical = 12.dp, horizontal = 16.dp)
+                ) {
+                    Icon(Icons.Default.Language, contentDescription = null, tint = Gold400, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Open Live Web POS Portal", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+
+                // 2. Download Android APK & Windows Desktop App in a Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val apkUrl = "${settingsManager.getPortalUrl()}/downloads/choudhury-pos-app.apk"
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(apkUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open download: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f).testTag("btn_download_apk"),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.Android, contentDescription = null, tint = Emerald600, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Download APK", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val winUrl = settingsManager.getWindowsDownloadUrl()
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(winUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Could not open download: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f).testTag("btn_download_windows"),
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(vertical = 10.dp, horizontal = 8.dp)
+                    ) {
+                        Icon(Icons.Default.DesktopWindows, contentDescription = null, tint = Blue600, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Windows App", fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Installation Instructions info box
+                Surface(
+                    color = Slate50,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Slate200),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "💡 Help & Installation Instructions:",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = Navy900
+                        )
+                        Text(
+                            text = "• Android: Download the 50 MB APK and tap install. Enable 'Install unknown apps' if prompted.\n• Windows: Download and extract the 112 MB ZIP package, then run 'Install-ChoudhuryPOS.bat' to create your Desktop & Start Menu shortcuts.",
+                            fontSize = 10.5.sp,
+                            color = Slate700,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+
         // Section Header
         SectionHeader(
             title = "About & Official Support",
@@ -205,29 +358,7 @@ fun AboutAndSupportSection(
 
                 Divider(color = Slate200, modifier = Modifier.padding(vertical = 4.dp))
 
-                // 6. Portal Login
-                SupportMenuItem(
-                    icon = Icons.Default.Web,
-                    title = "Portal Login",
-                    subtitle = if (settingsManager.getPortalUrl().isNotBlank()) settingsManager.getPortalUrl() else "Tap to configure or open Web Portal",
-                    onClick = {
-                        safeOpenUrl(
-                            urlStr = settingsManager.getPortalUrl(),
-                            fallbackPrompt = "Please configure the official Portal URL.",
-                            typeKey = "PORTAL"
-                        )
-                    },
-                    onEditClick = {
-                        configDialogType = "PORTAL"
-                        configInputValue = settingsManager.getPortalUrl()
-                        showConfigDialog = true
-                    },
-                    testTag = "menu_portal_login"
-                )
-
-                Divider(color = Slate200, modifier = Modifier.padding(vertical = 4.dp))
-
-                // 7. Download for iOS
+                // 6. Download for iOS
                 SupportMenuItem(
                     icon = Icons.Default.PhoneIphone,
                     title = "Download for iOS",
@@ -245,28 +376,6 @@ fun AboutAndSupportSection(
                         showConfigDialog = true
                     },
                     testTag = "menu_download_ios"
-                )
-
-                Divider(color = Slate200, modifier = Modifier.padding(vertical = 4.dp))
-
-                // 8. Download for Windows
-                SupportMenuItem(
-                    icon = Icons.Default.LaptopWindows,
-                    title = "Download for Windows",
-                    subtitle = if (settingsManager.getWindowsDownloadUrl().isNotBlank()) settingsManager.getWindowsDownloadUrl() else "Official Windows Desktop package download link",
-                    onClick = {
-                        safeOpenUrl(
-                            urlStr = settingsManager.getWindowsDownloadUrl(),
-                            fallbackPrompt = "Configure Windows download URL.",
-                            typeKey = "WINDOWS"
-                        )
-                    },
-                    onEditClick = {
-                        configDialogType = "WINDOWS"
-                        configInputValue = settingsManager.getWindowsDownloadUrl()
-                        showConfigDialog = true
-                    },
-                    testTag = "menu_download_windows"
                 )
             }
         }
