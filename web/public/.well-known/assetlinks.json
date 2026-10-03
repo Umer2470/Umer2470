@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.aistudio.sentrystore.pos",
+    "sha256_cert_fingerprints": [
+      "EA:0C:37:99:F7:FE:A3:44:BF:C9:BD:B2:73:A5:93:C2:19:D6:B0:20:B5:9E:F7:4D:9D:62:DE:14:6E:2D:D9:93"
+    ]
+  }
+}]

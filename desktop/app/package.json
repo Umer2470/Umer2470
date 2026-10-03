@@ -1,9 +1,12 @@
 {
-  "name": "choudhury-pos",
-  "productName": "CHOUDHURY POS",
-  "version": "8.0.0",
-  "description": "CHOUDHURY POS — Enterprise Business Management System (Windows Edition)",
+  "name": "choudhury-pos-desktop",
+  "version": "1.0.0",
+  "description": "Choudhury POS Windows Desktop Application",
   "main": "main.js",
-  "author": "CHOUDHURY POS Team",
-  "license": "Proprietary"
+  "scripts": {
+    "start": "electron ."
+  },
+  "keywords": ["pos", "point-of-sale", "desktop"],
+  "author": "Choudhury POS",
+  "license": "ISC"
 }

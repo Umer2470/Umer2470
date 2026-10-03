@@ -1,16 +1,25 @@
 {
-  "name": "CHOUDHURY STORE POS",
-  "short_name": "ChoudhuryPOS",
+  "name": "Choudhury POS — Enterprise Web Portal",
+  "short_name": "Choudhury POS",
+  "description": "Production commercial retail store management & POS web portal with offline sync and store calculator.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0d1b2a",
-  "theme_color": "#059669",
-  "description": "Professional Retail POS Web Application with Two-Way Android Sync & Offline PWA",
+  "background_color": "#f8fafc",
+  "theme_color": "#1e3a8a",
+  "orientation": "any",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23059669'/%3E%3Cpath d='M25 35h50v40H25z' fill='none' stroke='white' stroke-width='6'/%3E%3Cpath d='M35 35V25a15 15 0 0130 0v10' fill='none' stroke='white' stroke-width='6'/%3E%3Ccircle cx='50' cy='55' r='6' fill='white'/%3E%3C/svg%3E",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml"
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
     }
-  ]
+  ],
+  "categories": ["business", "finance", "productivity"]
 }

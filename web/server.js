@@ -1,1572 +1,898 @@
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
+const http = require('http');
 const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { DatabaseSync } = require('node:sqlite');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 
-const PORT = process.env.APP_PORT || (process.env.DOCKER_PRODUCTION ? (process.env.PORT || 8080) : 3000);
-const JWT_SECRET = process.env.JWT_SECRET || 'choudhury-pos-enterprise-secret-key-2026';
+const PORT = process.env.APP_PORT || 3000;
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, 'pos_central.db');
+const JWT_SECRET = process.env.JWT_SECRET || 'choudhury-pos-production-secret-2026';
+const PUBLIC_DIR = path.join(__dirname, 'public');
+const DOWNLOADS_DIR = path.join(PUBLIC_DIR, 'downloads');
 
-// Ensure database directory exists if mounted via volume
-const dbDir = path.dirname(DB_PATH);
-if (!fs.existsSync(dbDir)) {
-  fs.mkdirSync(dbDir, { recursive: true });
+// Ensure directories
+[path.dirname(DB_PATH), PUBLIC_DIR, DOWNLOADS_DIR].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+});
+
+// Database
+const db = new DatabaseSync(DB_PATH);
+console.log('Connected to SQLite via node:sqlite at', DB_PATH);
+
+const bcrypt = require('bcryptjs');
+const BCRYPT_ROUNDS = 10;
+
+function hashPassword(password) {
+  return bcrypt.hashSync(password, BCRYPT_ROUNDS);
 }
 
-const app = express();
-app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// Serve static frontend files
-app.use(express.static(path.join(__dirname, 'public')));
-
-// --------------------------------------------------------------------------
-// DATABASE INITIALIZATION & SCHEMA (Native Node 22 SQLite)
-// --------------------------------------------------------------------------
-const db = new DatabaseSync(DB_PATH);
-db.pragma = (str) => db.exec('PRAGMA ' + str);
-db.transaction = (fn) => (...args) => {
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const res = fn(...args);
-    db.exec('COMMIT');
-    return res;
-  } catch (err) {
-    try { db.exec('ROLLBACK'); } catch (_) {}
-    throw err;
+function verifyPassword(password, storedHash) {
+  if (!password || !storedHash) return false;
+  if (storedHash.startsWith('$2')) {
+    return bcrypt.compareSync(password, storedHash);
   }
-};
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+  // Controlled migration fallback for legacy SHA-256 salted hashes
+  const legacyHash = crypto.createHash('sha256').update(password + '_choudhury_salt_2026').digest('hex');
+  return legacyHash === storedHash;
+}
+
+function hashRecoveryPin(pin) {
+  return bcrypt.hashSync(pin, BCRYPT_ROUNDS);
+}
+
+function verifyRecoveryPin(pin, storedPinHash) {
+  if (!pin || !storedPinHash) return false;
+  if (storedPinHash.startsWith('$2')) {
+    return bcrypt.compareSync(pin, storedPinHash);
+  }
+  const legacyPinHash = crypto.createHash('sha256').update(pin + '_choudhury_recovery_2026').digest('hex');
+  return legacyPinHash === storedPinHash;
+}
+
+// Native JWT Implementation (RFC 7519 compliant)
+function base64Url(str) {
+  return Buffer.from(str).toString('base64url');
+}
+
+function signToken(payload, secret, expiresInSeconds = 7200) {
+  const header = base64Url(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+  const now = Math.floor(Date.now() / 1000);
+  const body = base64Url(JSON.stringify({ ...payload, iat: now, exp: now + expiresInSeconds }));
+  const sig = crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
+  return `${header}.${body}.${sig}`;
+}
+
+function verifyToken(token, secret) {
+  try {
+    if (!token) return null;
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const [header, body, sig] = parts;
+    const expectedSig = crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
+    if (sig !== expectedSig) return null;
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    if (payload.exp && Math.floor(Date.now() / 1000) > payload.exp) return null;
+    return payload;
+  } catch (e) {
+    return null;
+  }
+}
 
 function initDb() {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS stores (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      code TEXT UNIQUE NOT NULL,
-      address TEXT,
-      phone TEXT,
-      email TEXT,
-      tax_number TEXT,
-      is_active INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec('PRAGMA foreign_keys = ON;');
+  db.exec('PRAGMA journal_mode = WAL;');
 
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      full_name TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'CASHIER', -- SUPER_ADMIN, ADMIN, SUPERVISOR, CASHIER
-      store_id INTEGER REFERENCES stores(id),
-      pin TEXT,
-      is_active INTEGER DEFAULT 1,
-      must_change_password INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS stores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    code TEXT UNIQUE NOT NULL,
+    created_at INTEGER
+  );`);
 
-    CREATE TABLE IF NOT EXISTS categories (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT UNIQUE NOT NULL,
-      icon TEXT DEFAULT 'tag',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    recovery_pin_hash TEXT,
+    role TEXT DEFAULT 'CASHIER',
+    created_at INTEGER,
+    FOREIGN KEY (store_id) REFERENCES stores(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      barcode TEXT UNIQUE NOT NULL,
-      sku TEXT,
-      category TEXT DEFAULT 'General',
-      brand TEXT DEFAULT 'General',
-      purchase_price REAL DEFAULT 0.0,
-      sale_price REAL NOT NULL,
-      stock_quantity REAL DEFAULT 0.0,
-      min_stock_alert REAL DEFAULT 5.0,
-      unit TEXT DEFAULT 'Pcs',
-      tax_percent REAL DEFAULT 0.0,
-      store_id INTEGER DEFAULT 1,
-      image_url TEXT,
-      is_active INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  // Migrations for existing database tables
+  try { db.exec("ALTER TABLE users ADD COLUMN recovery_pin_hash TEXT;"); } catch (e) {}
+  try { db.exec("ALTER TABLE customers ADD COLUMN updated_at INTEGER;"); } catch (e) {}
+  try { db.exec("ALTER TABLE suppliers ADD COLUMN updated_at INTEGER;"); } catch (e) {}
 
-    CREATE TABLE IF NOT EXISTS customers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      phone TEXT,
-      email TEXT,
-      address TEXT,
-      credit_limit REAL DEFAULT 10000.0,
-      current_balance REAL DEFAULT 0.0,
-      store_id INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT UNIQUE NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS customer_ledger (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      customer_id INTEGER NOT NULL REFERENCES customers(id),
-      transaction_type TEXT NOT NULL, -- SALE_CREDIT, PAYMENT_RECEIVED, RETURN_REFUND
-      invoice_no TEXT,
-      debit REAL DEFAULT 0.0,
-      credit REAL DEFAULT 0.0,
-      balance_after REAL NOT NULL,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    barcode TEXT NOT NULL,
+    category TEXT DEFAULT 'General',
+    purchase_price REAL DEFAULT 0.0,
+    sale_price REAL DEFAULT 0.0,
+    stock_quantity REAL DEFAULT 0.0,
+    min_stock_alert REAL DEFAULT 5.0,
+    unit TEXT DEFAULT 'Pcs',
+    updated_at INTEGER,
+    FOREIGN KEY (store_id) REFERENCES stores(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS suppliers (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      contact_person TEXT,
-      phone TEXT,
-      email TEXT,
-      address TEXT,
-      payable_balance REAL DEFAULT 0.0,
-      store_id INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS customers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    address TEXT,
+    current_balance REAL DEFAULT 0.0,
+    updated_at INTEGER,
+    FOREIGN KEY (store_id) REFERENCES stores(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS supplier_ledger (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
-      transaction_type TEXT NOT NULL, -- PURCHASE, PAYMENT_MADE
-      reference_no TEXT,
-      debit REAL DEFAULT 0.0,
-      credit REAL DEFAULT 0.0,
-      balance_after REAL NOT NULL,
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS suppliers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    phone TEXT,
+    contact_person TEXT,
+    balance REAL DEFAULT 0.0,
+    updated_at INTEGER,
+    FOREIGN KEY (store_id) REFERENCES stores(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS purchases (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      purchase_no TEXT UNIQUE NOT NULL,
-      supplier_id INTEGER REFERENCES suppliers(id),
-      store_id INTEGER DEFAULT 1,
-      total_amount REAL NOT NULL,
-      paid_amount REAL DEFAULT 0.0,
-      payment_status TEXT DEFAULT 'PAID', -- PAID, PARTIAL, UNPAID
-      payment_method TEXT DEFAULT 'CASH',
-      status TEXT DEFAULT 'RECEIVED',
-      notes TEXT,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    invoice_no TEXT UNIQUE NOT NULL,
+    customer_id INTEGER,
+    customer_name TEXT DEFAULT 'Walking Customer',
+    subtotal REAL DEFAULT 0.0,
+    discount_amount REAL DEFAULT 0.0,
+    tax_amount REAL DEFAULT 0.0,
+    total_amount REAL DEFAULT 0.0,
+    amount_received REAL DEFAULT 0.0,
+    amount_applied REAL DEFAULT 0.0,
+    change_due REAL DEFAULT 0.0,
+    balance_due REAL DEFAULT 0.0,
+    payment_method TEXT DEFAULT 'CASH',
+    payment_status TEXT DEFAULT 'PAID',
+    cashier_name TEXT DEFAULT 'Cashier',
+    sync_status TEXT DEFAULT 'SYNCED',
+    created_at INTEGER,
+    FOREIGN KEY (store_id) REFERENCES stores(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS purchase_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      purchase_id INTEGER NOT NULL REFERENCES purchases(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      quantity REAL NOT NULL,
-      unit_cost REAL NOT NULL,
-      total_cost REAL NOT NULL
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS invoice_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    invoice_id INTEGER NOT NULL,
+    product_id INTEGER,
+    product_name TEXT,
+    barcode TEXT,
+    quantity REAL DEFAULT 1.0,
+    unit_price REAL DEFAULT 0.0,
+    total_price REAL DEFAULT 0.0,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS register_shifts (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      store_id INTEGER DEFAULT 1,
-      opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      closed_at DATETIME,
-      opening_cash REAL NOT NULL DEFAULT 0.0,
-      closing_cash_actual REAL,
-      expected_cash REAL,
-      cash_shortage_excess REAL,
-      status TEXT DEFAULT 'OPEN', -- OPEN, CLOSED
-      notes TEXT
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS payment_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    invoice_id INTEGER NOT NULL,
+    invoice_no TEXT,
+    customer_id INTEGER,
+    amount REAL DEFAULT 0.0,
+    payment_method TEXT DEFAULT 'CASH',
+    cashier_name TEXT,
+    notes TEXT,
+    idempotency_key TEXT UNIQUE,
+    created_at INTEGER,
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS sales (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      invoice_no TEXT UNIQUE NOT NULL,
-      shift_id INTEGER REFERENCES register_shifts(id),
-      store_id INTEGER DEFAULT 1,
-      user_id INTEGER REFERENCES users(id),
-      customer_id INTEGER REFERENCES customers(id),
-      subtotal REAL NOT NULL,
-      discount_amount REAL DEFAULT 0.0,
-      tax_amount REAL DEFAULT 0.0,
-      total_amount REAL NOT NULL,
-      paid_amount REAL NOT NULL,
-      change_due REAL DEFAULT 0.0,
-      payment_method TEXT DEFAULT 'CASH', -- CASH, CARD, CREDIT, SPLIT
-      status TEXT DEFAULT 'COMPLETED', -- COMPLETED, CANCELLED, REFUNDED
-      notes TEXT,
-      sync_origin TEXT DEFAULT 'WEB', -- WEB, ANDROID
-      sync_status TEXT DEFAULT 'SYNCED',
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+  db.exec(`CREATE TABLE IF NOT EXISTS customer_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    store_id INTEGER NOT NULL,
+    customer_id INTEGER NOT NULL,
+    invoice_id INTEGER,
+    transaction_type TEXT,
+    debit_amount REAL DEFAULT 0.0,
+    credit_amount REAL DEFAULT 0.0,
+    balance_after REAL DEFAULT 0.0,
+    description TEXT,
+    created_at INTEGER,
+    FOREIGN KEY (customer_id) REFERENCES customers(id)
+  );`);
 
-    CREATE TABLE IF NOT EXISTS sale_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      sale_id INTEGER NOT NULL REFERENCES sales(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      product_name TEXT NOT NULL,
-      barcode TEXT,
-      quantity REAL NOT NULL,
-      sale_price REAL NOT NULL,
-      purchase_price REAL DEFAULT 0.0,
-      discount_amount REAL DEFAULT 0.0,
-      total_price REAL NOT NULL
-    );
+  const sCount = db.prepare('SELECT COUNT(*) as c FROM stores').get();
+  if (sCount && sCount.c === 0) {
+    const now = Date.now();
+    db.prepare("INSERT INTO stores (id, name, code, created_at) VALUES (1, 'Choudhury Main Branch', 'STORE-01', ?)").run(now);
+    db.prepare("INSERT INTO stores (id, name, code, created_at) VALUES (2, 'Choudhury Branch 2', 'STORE-02', ?)").run(now);
 
-    CREATE TABLE IF NOT EXISTS sale_returns (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      return_no TEXT UNIQUE NOT NULL,
-      sale_id INTEGER REFERENCES sales(id),
-      invoice_no TEXT NOT NULL,
-      store_id INTEGER DEFAULT 1,
-      refund_amount REAL NOT NULL,
-      reason TEXT,
-      restocked INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
+    const hash = hashPassword('admin123');
+    const recPin = hashRecoveryPin('7860');
+    db.prepare("INSERT INTO users (store_id, username, password_hash, recovery_pin_hash, role, created_at) VALUES (1, 'admin', ?, ?, 'OWNER', ?)").run(hash, recPin, now);
 
-    CREATE TABLE IF NOT EXISTS sale_return_items (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      return_id INTEGER NOT NULL REFERENCES sale_returns(id) ON DELETE CASCADE,
-      product_id INTEGER NOT NULL REFERENCES products(id),
-      quantity REAL NOT NULL,
-      refund_price REAL NOT NULL,
-      total_refund REAL NOT NULL
-    );
+    const insProd = db.prepare('INSERT INTO products (store_id, name, barcode, category, purchase_price, sale_price, stock_quantity, unit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    insProd.run(1, 'Super Basmati Rice 1kg (سپر باسمتی چاول)', '8964001', 'Grocery', 320.0, 380.0, 150, 'kg', now);
+    insProd.run(1, 'Tapal Danedar Tea 400g (ٹیپال دانے دار چائے)', '8964002', 'Beverages', 550.0, 620.0, 80, 'Pcs', now);
+    insProd.run(1, 'Dalda Cooking Oil 1L (ڈالڈا کوکنگ آئل)', '8964003', 'Oils', 510.0, 580.0, 95, 'Ltr', now);
+    insProd.run(1, 'National Chilli Garlic Sauce 500g', '8964004', 'Condiments', 280.0, 330.0, 60, 'Pcs', now);
+    insProd.run(2, 'Branch 2 Fresh Milk 1L', '8964005', 'Dairy', 180.0, 210.0, 50, 'Ltr', now);
 
-    CREATE TABLE IF NOT EXISTS expenses (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      category TEXT NOT NULL,
-      amount REAL NOT NULL,
-      payment_method TEXT DEFAULT 'CASH',
-      recipient TEXT,
-      description TEXT,
-      store_id INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    );
-
-    CREATE TABLE IF NOT EXISTS store_settings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      store_id INTEGER UNIQUE DEFAULT 1,
-      store_name TEXT DEFAULT 'CHOUDHURY STORE POS',
-      tagline TEXT DEFAULT 'Quality Products & Superior Service',
-      address TEXT DEFAULT 'Main Market, Commercial Center',
-      phone TEXT DEFAULT '+92-300-1234567',
-      email TEXT DEFAULT 'contact@choudhurypos.com',
-      tax_number TEXT DEFAULT 'NTN-9876543-2',
-      currency_symbol TEXT DEFAULT 'Rs',
-      default_tax_percent REAL DEFAULT 0.0,
-      receipt_paper_size TEXT DEFAULT '80mm', -- 58mm, 80mm
-      receipt_header TEXT DEFAULT 'Welcome to CHOUDHURY STORE POS',
-      receipt_footer TEXT DEFAULT 'Thank you for your business! Please visit again.',
-      barcode_format TEXT DEFAULT 'EAN_13',
-      sound_enabled INTEGER DEFAULT 1,
-      dark_mode INTEGER DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS sync_checkpoints (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      device_id TEXT NOT NULL,
-      last_sync_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-      records_synced INTEGER DEFAULT 0,
-      direction TEXT DEFAULT 'TWO_WAY'
-    );
-  `);
-
-  // Migration: Ensure must_change_password column exists on existing databases
-  try {
-    db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
-  } catch (_) {}
-
-  // Seed default data if empty
-  const storeCount = db.prepare('SELECT count(*) as cnt FROM stores').get().cnt;
-  if (storeCount === 0) {
-    db.prepare(`
-      INSERT INTO stores (name, code, address, phone, email, tax_number)
-      VALUES ('Main Store', 'BRANCH-01', 'Commercial Market, Lahore', '+92-300-1234567', 'info@choudhurypos.com', 'NTN-9876543-2')
-    `).run();
-
-    const salt = bcrypt.genSaltSync(10);
-    const adminHash = bcrypt.hashSync('admin123', salt);
-    const cashierHash = bcrypt.hashSync('1234', salt);
-
-    db.prepare(`
-      INSERT INTO users (username, password_hash, full_name, role, store_id, pin, must_change_password)
-      VALUES 
-        ('admin', ?, 'System Administrator', 'SUPER_ADMIN', 1, '1234', 1),
-        ('cashier1', ?, 'Senior Cashier', 'CASHIER', 1, '1111', 1)
-    `).run(adminHash, cashierHash);
-
-    db.prepare(`
-      INSERT INTO store_settings (store_id, store_name, tagline, address, phone, currency_symbol)
-      VALUES (1, 'CHOUDHURY STORE POS', 'Smart Retail Point of Sale', 'Commercial Market, Lahore', '+92-300-1234567', 'Rs')
-    `).run();
-
-    // Seed categories
-    const categories = ['Grocery', 'Beverages', 'Dairy', 'Snacks', 'Personal Care', 'Household', 'Bakery'];
-    const insertCat = db.prepare('INSERT INTO categories (name) VALUES (?)');
-    for (const cat of categories) {
-      insertCat.run(cat);
-    }
-
-    // Seed products matching the real retail catalog
-    const insertProd = db.prepare(`
-      INSERT INTO products (name, barcode, sku, category, brand, purchase_price, sale_price, stock_quantity, min_stock_alert, unit)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    insertProd.run('Super Basmati Rice 1 Kg', '8901234567890', 'SKU-RICE-001', 'Grocery', 'Guard', 210.0, 260.0, 85.0, 10.0, 'Kg');
-    insertProd.run('Dalda Cooking Oil 1 Litre', '8909876543210', 'SKU-OIL-002', 'Grocery', 'Dalda', 450.0, 520.0, 42.0, 10.0, 'Bottle');
-    insertProd.run('Refined Sugar 1 Kg', '2000000000017', 'SKU-SUGAR-003', 'Grocery', 'Habib', 120.0, 145.0, 150.0, 20.0, 'Kg');
-    insertProd.run('Nestle MilkPak 1000ml', '8904561237891', 'SKU-MILK-004', 'Dairy', 'Nestle', 240.0, 280.0, 60.0, 15.0, 'Pack');
-    insertProd.run('Tapal Danedar Tea 400g', '8906549873215', 'SKU-TEA-005', 'Beverages', 'Tapal', 480.0, 560.0, 35.0, 8.0, 'Box');
-    insertProd.run('Lays Classic Chips 50g', '8907894561238', 'SKU-SNACK-006', 'Snacks', 'Lays', 60.0, 80.0, 120.0, 25.0, 'Pack');
-    insertProd.run('Coca Cola Regular 1.5L', '8903216549872', 'SKU-DRINK-007', 'Beverages', 'Coca-Cola', 160.0, 200.0, 75.0, 15.0, 'Bottle');
-    insertProd.run('LU Prince Biscuits Half Roll', '8901472583694', 'SKU-BISCUIT-008', 'Bakery', 'Continental', 35.0, 50.0, 95.0, 20.0, 'Pack');
-    insertProd.run('Dettol Original Soap 100g', '8909638527415', 'SKU-SOAP-009', 'Personal Care', 'Reckitt', 90.0, 120.0, 50.0, 12.0, 'Bar');
-    insertProd.run('Surf Excel Detergent 1 Kg', '8908529631478', 'SKU-SURF-010', 'Household', 'Unilever', 420.0, 500.0, 28.0, 5.0, 'Pouch');
-
-    // Seed customers
-    const insertCust = db.prepare(`
-      INSERT INTO customers (name, phone, address, credit_limit, current_balance)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    insertCust.run('Walking Customer', '', 'Store Retail', 0.0, 0.0);
-    insertCust.run('Chaudhry Muhammad Tariq', '+92-300-5551122', 'House 42, Street 7, Model Town', 25000.0, 4200.0);
-    insertCust.run('Malik Usman Liaquat', '+92-321-4443322', 'Commercial Plaza, Gulberg III', 50000.0, 11500.0);
-
-    // Seed suppliers
-    const insertSupp = db.prepare(`
-      INSERT INTO suppliers (name, contact_person, phone, address, payable_balance)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-    insertSupp.run('Al-Madina Wholesale Distributors', 'Haji Rasheed', '+92-301-7778899', 'Grain Market, Badami Bagh', 45000.0);
-    insertSupp.run('Nestle Pakistan Regional Depot', 'Farhan Sheikh', '+92-333-8889900', 'Ferozepur Road, Lahore', 18500.0);
-
-    console.log('Central Database seeded with default enterprise retail data.');
+    const insCust = db.prepare('INSERT INTO customers (store_id, name, phone, address, current_balance, updated_at) VALUES (?, ?, ?, ?, ?, ?)');
+    insCust.run(1, 'Haji Muhammad Aslam (حاجی محمد اسلم)', '0300-1234567', 'Shop #12, Commercial Market', 1500.0, now);
+    insCust.run(1, 'Malik Tariq (ملک طارق)', '0321-7654321', 'House 45, Street 9', 0.0, now);
   }
 }
 
 initDb();
 
-// --------------------------------------------------------------------------
-// AUTHENTICATION MIDDLEWARE
-// --------------------------------------------------------------------------
-function authenticateToken(req, res, next) {
+function sendJson(res, statusCode, data) {
+  res.writeHead(statusCode, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+  });
+  res.end(JSON.stringify(data));
+}
+
+function sendFile(res, filePath, contentType, isAttachment = false, filename = '') {
+  fs.stat(filePath, (err, stats) => {
+    if (err || !stats.isFile()) {
+      return sendJson(res, 404, { error: 'File not found' });
+    }
+    const headers = {
+      'Content-Type': contentType,
+      'Content-Length': stats.size,
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'public, max-age=0'
+    };
+    if (isAttachment) {
+      headers['Content-Disposition'] = `attachment; filename="${filename || path.basename(filePath)}"`;
+    }
+    res.writeHead(200, headers);
+    fs.createReadStream(filePath).pipe(res);
+  });
+}
+
+function parseBody(req) {
+  return new Promise((resolve) => {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        resolve(body ? JSON.parse(body) : {});
+      } catch (e) {
+        resolve({});
+      }
+    });
+  });
+}
+
+function getAuthUser(req) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Authentication token required' });
+  if (!authHeader) return null;
+  const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+  return verifyToken(token, JWT_SECRET);
+}
 
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: 'Invalid or expired session' });
-    req.user = user;
+const server = http.createServer(async (req, res) => {
+  // CORS Preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization'
+    });
+    return res.end();
+  }
 
-    // Security enforcement: Block operational APIs until default password is changed
-    if (user.must_change_password && req.path !== '/api/auth/change-password' && req.path !== '/api/auth/me') {
-      return res.status(403).json({
-        error: 'Initial password change required before accessing system functions',
-        code: 'MUST_CHANGE_PASSWORD'
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = parsedUrl.pathname;
+  const method = req.method;
+  const authUser = getAuthUser(req);
+
+  try {
+    // ---------------- 1. Health & Status ----------------
+    if (pathname === '/.well-known/assetlinks.json' && method === 'GET') {
+      const assetlinks = [{
+        relation: ['delegate_permission/common.handle_all_urls'],
+        target: {
+          namespace: 'android_app',
+          package_name: 'com.aistudio.sentrystore.pos',
+          sha256_cert_fingerprints: [
+            'EA:0C:37:99:F7:FE:A3:44:BF:C9:BD:B2:73:A5:93:C2:19:D6:B0:20:B5:9E:F7:4D:9D:62:DE:14:6E:2D:D9:93'
+          ]
+        }
+      }];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(assetlinks, null, 2));
+    }
+
+    if (pathname === '/api/health' && (method === 'GET' || method === 'HEAD')) {
+      const sCount = db.prepare('SELECT COUNT(*) as c FROM stores').get();
+      const uCount = db.prepare('SELECT COUNT(*) as c FROM users').get();
+      const pCount = db.prepare('SELECT COUNT(*) as c FROM products').get();
+      const iCount = db.prepare('SELECT COUNT(*) as c FROM invoices').get();
+      let dbBytes = 0;
+      try { dbBytes = fs.statSync(DB_PATH).size; } catch (e) {}
+
+      return sendJson(res, 200, {
+        status: 'ok',
+        service: 'choudhury-pos-backend',
+        version: '8.1.0',
+        environment: process.env.NODE_ENV || 'production',
+        uptime: process.uptime(),
+        timestamp: Date.now(),
+        storesCount: sCount ? sCount.c : 1,
+        usersCount: uCount ? uCount.c : 1,
+        productsCount: pCount ? pCount.c : 0,
+        invoicesCount: iCount ? iCount.c : 0,
+        dbSizeBytes: dbBytes,
+        port: PORT
       });
     }
 
-    next();
-  });
-}
+    // ---------------- 2. Direct Downloads ----------------
+    if (pathname === '/downloads/choudhury-pos-app.apk' && (method === 'GET' || method === 'HEAD')) {
+      return sendFile(res, path.join(DOWNLOADS_DIR, 'choudhury-pos-app.apk'), 'application/vnd.android.package-archive', true, 'choudhury-pos-app.apk');
+    }
+    if (pathname === '/downloads/choudhury-pos-windows-x64.zip' && (method === 'GET' || method === 'HEAD')) {
+      return sendFile(res, path.join(DOWNLOADS_DIR, 'choudhury-pos-windows-x64.zip'), 'application/zip', true, 'choudhury-pos-windows-x64.zip');
+    }
 
-function requireAdmin(req, res, next) {
-  if (req.user && (req.user.role === 'SUPER_ADMIN' || req.user.role === 'ADMIN')) {
-    next();
-  } else {
-    res.status(403).json({ error: 'Administrative privileges required' });
-  }
-}
-
-function authenticateOrTerminal(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-  if (token) {
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-      if (!err && user) {
-        req.user = user;
-        return next();
+    // ---------------- 3. Shared User Accounts & Authentication ----------------
+    if (pathname === '/api/auth/register' && method === 'POST') {
+      const body = await parseBody(req);
+      const { username, password, storeName = 'My Retail Store', recoveryPin = '1234', role = 'OWNER' } = body;
+      if (!username || !password) {
+        return sendJson(res, 400, { error: 'Username and password required' });
       }
-      const storeId = parseInt(req.headers['x-store-id'] || '1', 10);
-      req.user = { id: 1, username: 'terminal', role: 'admin', store_id: isNaN(storeId) ? 1 : storeId };
-      next();
-    });
-  } else {
-    const storeId = parseInt(req.headers['x-store-id'] || '1', 10);
-    req.user = { id: 1, username: 'terminal', role: 'admin', store_id: isNaN(storeId) ? 1 : storeId };
-    next();
-  }
-}
 
-// --------------------------------------------------------------------------
-// API ROUTES
-// --------------------------------------------------------------------------
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'UP',
-    system: 'CHOUDHURY POS APP -- SHARED CLOUD & ON-PREMISE ENGINE',
-    version: '8.0.0',
-    timestamp: new Date().toISOString()
-  });
-});
-
-// Auth: Register New Account & Shop
-app.post('/api/auth/register', (req, res) => {
-  const { fullName, username, password, storeName, phone } = req.body;
-  if (!username || !password || !fullName) {
-    return res.status(400).json({ error: 'Full name, username and password are required' });
-  }
-
-  const cleanUser = username.trim();
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(cleanUser);
-  if (existing) {
-    return res.status(409).json({ error: 'Username already taken. Please choose another.' });
-  }
-
-  // Create store or use store name
-  const cleanStore = (storeName || 'CHOUDHURY POS').trim();
-  let storeId = 1;
-  try {
-    const storeRes = db.prepare('INSERT INTO stores (name, code, phone) VALUES (?, ?, ?)').run(cleanStore, 'SHOP-' + Math.floor(1000 + Math.random() * 9000), phone || '03080018035');
-    storeId = storeRes.lastInsertRowid;
-    db.prepare('INSERT INTO store_settings (store_id, store_name, phone) VALUES (?, ?, ?)').run(storeId, cleanStore, phone || '03080018035');
-  } catch (_) {
-    storeId = 1;
-  }
-
-  const hash = bcrypt.hashSync(password, 10);
-  const info = db.prepare(`
-    INSERT INTO users (store_id, username, password_hash, full_name, role, is_active)
-    VALUES (?, ?, ?, ?, 'ADMIN', 1)
-  `).run(storeId, cleanUser, hash, fullName.trim());
-
-  const token = jwt.sign(
-    { id: info.lastInsertRowid, username: cleanUser, role: 'ADMIN', store_id: storeId },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.status(201).json({
-    success: true,
-    token,
-    user: { id: info.lastInsertRowid, username: cleanUser, fullName: fullName.trim(), role: 'ADMIN', storeId }
-  });
-});
-
-// Auth: Change Username / User ID
-app.post('/api/auth/change-username', authenticateToken, (req, res) => {
-  const { currentPassword, newUsername } = req.body;
-  if (!currentPassword || !newUsername) {
-    return res.status(400).json({ error: 'Current password and new username are required' });
-  }
-
-  const cleanNewUser = newUsername.trim();
-  if (cleanNewUser.length < 3) {
-    return res.status(400).json({ error: 'Username must be at least 3 characters' });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
-    return res.status(401).json({ error: 'Current password verification failed' });
-  }
-
-  const existing = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(cleanNewUser, req.user.id);
-  if (existing) {
-    return res.status(409).json({ error: 'Username already in use by another account' });
-  }
-
-  db.prepare('UPDATE users SET username = ? WHERE id = ?').run(cleanNewUser, req.user.id);
-
-  const newToken = jwt.sign(
-    { id: user.id, username: cleanNewUser, role: user.role, store_id: user.store_id },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.json({ success: true, message: 'Username updated successfully', token: newToken, newUsername: cleanNewUser });
-});
-
-// Auth: Change Password
-app.post('/api/auth/change-password', authenticateToken, (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: 'Current and new password are required' });
-  }
-
-  if (newPassword.length < 4) {
-    return res.status(400).json({ error: 'New password must be at least 4 characters long' });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
-  if (!user || !bcrypt.compareSync(currentPassword, user.password_hash)) {
-    return res.status(401).json({ error: 'Current password verification failed' });
-  }
-
-  const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, req.user.id);
-
-  const updatedToken = jwt.sign(
-    { id: req.user.id, username: req.user.username, role: req.user.role, store_id: req.user.store_id, must_change_password: false },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.json({ success: true, message: 'Password changed successfully', token: updatedToken });
-});
-
-// Auth: Forgot Password Recovery
-app.post('/api/auth/forgot-password', (req, res) => {
-  const { username, storePin, newPassword } = req.body;
-  if (!username || !newPassword) {
-    return res.status(400).json({ error: 'Username and new password are required' });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username.trim());
-  if (!user) {
-    return res.status(404).json({ error: 'User account not found' });
-  }
-
-  // Security check: verify shop PIN or default PIN
-  if (storePin && user.pin && storePin !== user.pin && storePin !== '1234' && storePin !== '1111') {
-    return res.status(403).json({ error: 'Security PIN verification failed' });
-  }
-
-  const hash = bcrypt.hashSync(newPassword, 10);
-  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(hash, user.id);
-
-  res.json({ success: true, message: 'Password reset successfully. You can now login.' });
-});
-
-// Auth: Login
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
-  }
-
-  const user = db.prepare('SELECT * FROM users WHERE username = ? AND is_active = 1').get(username);
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Invalid username or password' });
-  }
-
-  const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(user.store_id || 1);
-  const settings = db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(user.store_id || 1);
-  const mustChange = !!user.must_change_password;
-
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role, store_id: user.store_id, must_change_password: mustChange },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      fullName: user.full_name,
-      role: user.role,
-      storeId: user.store_id,
-      mustChangePassword: mustChange
-    },
-    store,
-    settings
-  });
-});
-
-// Auth: PIN Quick Login (POS terminals)
-app.post('/api/auth/login-pin', (req, res) => {
-  const { pin } = req.body;
-  if (!pin) return res.status(400).json({ error: 'PIN is required' });
-
-  const user = db.prepare('SELECT * FROM users WHERE pin = ? AND is_active = 1').get(pin);
-  if (!user) return res.status(401).json({ error: 'Invalid PIN' });
-
-  const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(user.store_id || 1);
-  const settings = db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(user.store_id || 1);
-
-  const token = jwt.sign(
-    { id: user.id, username: user.username, role: user.role, store_id: user.store_id },
-    JWT_SECRET,
-    { expiresIn: '24h' }
-  );
-
-  res.json({
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      fullName: user.full_name,
-      role: user.role,
-      storeId: user.store_id
-    },
-    store,
-    settings
-  });
-});
-
-// Auth: Current Session
-app.get('/api/auth/me', authenticateToken, (req, res) => {
-  const user = db.prepare('SELECT id, username, full_name, role, store_id FROM users WHERE id = ?').get(req.user.id);
-  const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(req.user.store_id || 1);
-  const settings = db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(req.user.store_id || 1);
-  res.json({ user, store, settings });
-});
-
-// Dashboard KPI Stats
-app.get('/api/dashboard/stats', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const todayIso = todayStart.toISOString();
-
-  // Sales Today
-  const todaySales = db.prepare(`
-    SELECT 
-      COUNT(*) as invoiceCount,
-      COALESCE(SUM(total_amount), 0.0) as grossSales,
-      COALESCE(SUM(paid_amount), 0.0) as cashCollected
-    FROM sales 
-    WHERE store_id = ? AND status = 'COMPLETED' AND created_at >= ?
-  `).get(storeId, todayIso);
-
-  // Profit Today
-  const profitRow = db.prepare(`
-    SELECT COALESCE(SUM((si.sale_price - si.purchase_price) * si.quantity), 0.0) as netProfit
-    FROM sale_items si
-    JOIN sales s ON si.sale_id = s.id
-    WHERE s.store_id = ? AND s.status = 'COMPLETED' AND s.created_at >= ?
-  `).get(storeId, todayIso);
-
-  // Inventory stats
-  const invStats = db.prepare(`
-    SELECT 
-      COUNT(*) as totalProducts,
-      COALESCE(SUM(stock_quantity), 0.0) as totalUnits,
-      COALESCE(SUM(stock_quantity * purchase_price), 0.0) as inventoryValuation,
-      SUM(CASE WHEN stock_quantity <= min_stock_alert THEN 1 ELSE 0 END) as lowStockCount,
-      SUM(CASE WHEN stock_quantity <= 0 THEN 1 ELSE 0 END) as outOfStockCount
-    FROM products 
-    WHERE store_id = ? AND is_active = 1
-  `).get(storeId);
-
-  // Active register shift
-  const activeShift = db.prepare(`
-    SELECT rs.*, u.full_name as cashier_name 
-    FROM register_shifts rs
-    JOIN users u ON rs.user_id = u.id
-    WHERE rs.store_id = ? AND rs.status = 'OPEN'
-    ORDER BY rs.id DESC LIMIT 1
-  `).get(storeId);
-
-  // Recent 5 sales
-  const recentSales = db.prepare(`
-    SELECT s.*, c.name as customer_name, u.full_name as cashier_name
-    FROM sales s
-    LEFT JOIN customers c ON s.customer_id = c.id
-    LEFT JOIN users u ON s.user_id = u.id
-    WHERE s.store_id = ?
-    ORDER BY s.id DESC LIMIT 5
-  `).all(storeId);
-
-  res.json({
-    todayGrossSales: todaySales.grossSales,
-    todayInvoiceCount: todaySales.invoiceCount,
-    todayNetProfit: profitRow.netProfit,
-    todayCashCollected: todaySales.cashCollected,
-    totalProducts: invStats.totalProducts,
-    totalUnits: invStats.totalUnits,
-    inventoryValuation: invStats.inventoryValuation,
-    lowStockCount: invStats.lowStockCount,
-    outOfStockCount: invStats.outOfStockCount,
-    activeShift,
-    recentSales
-  });
-});
-
-// Products: List & Search
-app.get('/api/products', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const { query, category, lowStock } = req.query;
-
-  let sql = 'SELECT * FROM products WHERE store_id = ? AND is_active = 1';
-  const params = [storeId];
-
-  if (category && category !== 'All') {
-    sql += ' AND category = ?';
-    params.push(category);
-  }
-
-  if (lowStock === 'true') {
-    sql += ' AND stock_quantity <= min_stock_alert';
-  }
-
-  if (query) {
-    sql += ' AND (name LIKE ? OR barcode LIKE ? OR sku LIKE ?)';
-    const term = `%${query.trim()}%`;
-    params.push(term, term, term);
-  }
-
-  sql += ' ORDER BY name ASC';
-  const products = db.prepare(sql).all(...params);
-  res.json(products);
-});
-
-// Products: Lookup by exact barcode / SKU
-app.get('/api/products/barcode/:barcode', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const barcode = req.params.barcode.trim();
-
-  const product = db.prepare(`
-    SELECT * FROM products 
-    WHERE store_id = ? AND is_active = 1 AND (barcode = ? OR sku = ?)
-  `).get(storeId, barcode, barcode);
-
-  if (!product) {
-    return res.status(404).json({ error: `Product with barcode '${barcode}' not found` });
-  }
-
-  res.json(product);
-});
-
-// Products: Generate Next Master Barcode (200-prefix sequential with Mod10 check digit)
-app.get('/api/products/generate-barcode', authenticateToken, (req, res) => {
-  const maxRow = db.prepare(`
-    SELECT barcode FROM products 
-    WHERE barcode LIKE '200%' AND length(barcode) = 13 
-    ORDER BY barcode DESC LIMIT 1
-  `).get();
-
-  let nextSeq = 1;
-  if (maxRow && maxRow.barcode) {
-    const rawSeq = parseInt(maxRow.barcode.substring(3, 12), 10);
-    if (!isNaN(rawSeq)) {
-      nextSeq = rawSeq + 1;
-    }
-  }
-
-  const padded = String(nextSeq).padStart(9, '0');
-  const payload = '200' + padded;
-
-  // EAN-13 Mod 10 Check Digit calculation
-  let sum = 0;
-  for (let i = 0; i < 12; i++) {
-    const digit = parseInt(payload[i], 10);
-    sum += (i % 2 === 0) ? digit * 1 : digit * 3;
-  }
-  const checkDigit = (10 - (sum % 10)) % 10;
-  const masterBarcode = payload + checkDigit;
-
-  res.json({ barcode: masterBarcode, sequence: nextSeq });
-});
-
-// Products: Create Product
-app.post('/api/products', authenticateToken, requireAdmin, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const {
-    name, barcode, sku, category, brand,
-    purchase_price, sale_price, stock_quantity,
-    min_stock_alert, unit, tax_percent
-  } = req.body;
-
-  if (!name || !barcode || !sale_price) {
-    return res.status(400).json({ error: 'Product name, barcode, and sale price are required' });
-  }
-
-  const existing = db.prepare('SELECT id FROM products WHERE barcode = ?').get(barcode.trim());
-  if (existing) {
-    return res.status(400).json({ error: `Barcode '${barcode}' already exists in catalog` });
-  }
-
-  const stmt = db.prepare(`
-    INSERT INTO products (
-      name, barcode, sku, category, brand,
-      purchase_price, sale_price, stock_quantity,
-      min_stock_alert, unit, tax_percent, store_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const info = stmt.run(
-    name.trim(),
-    barcode.trim(),
-    sku ? sku.trim() : null,
-    category || 'General',
-    brand || 'General',
-    parseFloat(purchase_price) || 0.0,
-    parseFloat(sale_price),
-    parseFloat(stock_quantity) || 0.0,
-    parseFloat(min_stock_alert) || 5.0,
-    unit || 'Pcs',
-    parseFloat(tax_percent) || 0.0,
-    storeId
-  );
-
-  const created = db.prepare('SELECT * FROM products WHERE id = ?').get(info.lastInsertRowid);
-  res.status(201).json(created);
-});
-
-// Products: Update Product
-app.put('/api/products/:id', authenticateToken, requireAdmin, (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  const {
-    name, barcode, sku, category, brand,
-    purchase_price, sale_price, stock_quantity,
-    min_stock_alert, unit, tax_percent
-  } = req.body;
-
-  const existing = db.prepare('SELECT id FROM products WHERE barcode = ? AND id != ?').get(barcode.trim(), id);
-  if (existing) {
-    return res.status(400).json({ error: `Barcode '${barcode}' is already in use by another product` });
-  }
-
-  db.prepare(`
-    UPDATE products SET
-      name = ?, barcode = ?, sku = ?, category = ?, brand = ?,
-      purchase_price = ?, sale_price = ?, stock_quantity = ?,
-      min_stock_alert = ?, unit = ?, tax_percent = ?, updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(
-    name.trim(),
-    barcode.trim(),
-    sku ? sku.trim() : null,
-    category || 'General',
-    brand || 'General',
-    parseFloat(purchase_price) || 0.0,
-    parseFloat(sale_price),
-    parseFloat(stock_quantity) || 0.0,
-    parseFloat(min_stock_alert) || 5.0,
-    unit || 'Pcs',
-    parseFloat(tax_percent) || 0.0,
-    id
-  );
-
-  const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-  res.json(updated);
-});
-
-// Products: Delete / Archive Product
-app.delete('/api/products/:id', authenticateToken, requireAdmin, (req, res) => {
-  const id = parseInt(req.params.id, 10);
-  db.prepare('UPDATE products SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(id);
-  res.json({ success: true, message: 'Product archived successfully' });
-});
-
-// POS / Sales: Complete Checkout Transaction (Atomic Financial Transaction)
-app.post('/api/sales', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const userId = req.user.id;
-  const {
-    items, customer_id, discount_amount, tax_amount,
-    paid_amount, payment_method, notes
-  } = req.body;
-
-  if (!items || !items.length) {
-    return res.status(400).json({ error: 'Cart cannot be empty' });
-  }
-
-  // Calculate totals safely
-  let subtotal = 0.0;
-  for (const item of items) {
-    subtotal += item.sale_price * item.quantity;
-  }
-
-  const discount = parseFloat(discount_amount) || 0.0;
-  const tax = parseFloat(tax_amount) || 0.0;
-  const total = Math.max(0.0, subtotal - discount + tax);
-  const paid = parseFloat(paid_amount) || 0.0;
-  const change = Math.max(0.0, paid - total);
-
-  // Active shift check
-  const activeShift = db.prepare("SELECT id FROM register_shifts WHERE store_id = ? AND status = 'OPEN' ORDER BY id DESC LIMIT 1").get(storeId);
-  const shiftId = activeShift ? activeShift.id : null;
-
-  // Generate unique sequential invoice number (e.g. INV-2026-0001)
-  const countRow = db.prepare('SELECT count(*) as cnt FROM sales').get();
-  const nextNum = (countRow.cnt + 1).toString().padStart(6, '0');
-  const invoiceNo = `INV-${new Date().getFullYear()}-${nextNum}`;
-
-  // Atomic database transaction
-  const checkoutTx = db.transaction(() => {
-    // 1. Insert Sales Record
-    const saleInfo = db.prepare(`
-      INSERT INTO sales (
-        invoice_no, shift_id, store_id, user_id, customer_id,
-        subtotal, discount_amount, tax_amount, total_amount, paid_amount,
-        change_due, payment_method, status, notes, sync_origin, sync_status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'COMPLETED', ?, 'WEB', 'SYNCED')
-    `).run(
-      invoiceNo, shiftId, storeId, userId, customer_id || null,
-      subtotal, discount, tax, total, paid,
-      change, payment_method || 'CASH', notes || null
-    );
-
-    const saleId = saleInfo.lastInsertRowid;
-
-    // 2. Insert Sale Items & Deduct Inventory Stock
-    const insertItem = db.prepare(`
-      INSERT INTO sale_items (
-        sale_id, product_id, product_name, barcode, quantity,
-        sale_price, purchase_price, discount_amount, total_price
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const updateStock = db.prepare(`
-      UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?
-    `);
-
-    for (const item of items) {
-      const prod = db.prepare('SELECT purchase_price FROM products WHERE id = ?').get(item.product_id);
-      const purchasePrice = prod ? prod.purchase_price : 0.0;
-      const itemTotal = item.sale_price * item.quantity;
-
-      insertItem.run(
-        saleId, item.product_id, item.name, item.barcode || '',
-        item.quantity, item.sale_price, purchasePrice, 0.0, itemTotal
-      );
-
-      updateStock.run(item.quantity, item.product_id);
-    }
-
-    // 3. Customer Ledger for Credit / Udhar sales
-    if (customer_id && customer_id > 1) {
-      const due = Math.max(0.0, total - paid);
-      if (due > 0 || payment_method === 'CREDIT') {
-        const cust = db.prepare('SELECT current_balance FROM customers WHERE id = ?').get(customer_id);
-        const newBal = (cust ? cust.current_balance : 0.0) + due;
-
-        db.prepare('UPDATE customers SET current_balance = ? WHERE id = ?').run(newBal, customer_id);
-
-        db.prepare(`
-          INSERT INTO customer_ledger (
-            customer_id, transaction_type, invoice_no, debit, credit, balance_after, notes
-          ) VALUES (?, 'SALE_CREDIT', ?, ?, 0.0, ?, ?)
-        `).run(customer_id, invoiceNo, due, newBal, `Credit on Invoice ${invoiceNo}`);
+      const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+      if (existing) {
+        return sendJson(res, 409, { error: 'Username already exists' });
       }
+
+      const now = Date.now();
+      const code = 'STORE-' + Math.floor(Math.random() * 9000 + 1000);
+      const storeRes = db.prepare('INSERT INTO stores (name, code, created_at) VALUES (?, ?, ?)').run(storeName, code, now);
+      const storeId = Number(storeRes.lastInsertRowid);
+
+      const passHash = hashPassword(password);
+      const pinHash = hashRecoveryPin(recoveryPin);
+      const userRes = db.prepare('INSERT INTO users (store_id, username, password_hash, recovery_pin_hash, role, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+        .run(storeId, username, passHash, pinHash, role, now);
+      const userId = Number(userRes.lastInsertRowid);
+
+      const token = signToken({ userId, username, storeId, role }, JWT_SECRET, 86400); // 24h
+      const refreshToken = crypto.randomBytes(32).toString('hex');
+      db.prepare('INSERT INTO refresh_tokens (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)')
+        .run(userId, refreshToken, now + (30 * 86400 * 1000), now);
+
+      return sendJson(res, 201, {
+        success: true,
+        token,
+        refreshToken,
+        user: { id: userId, username, storeId, storeName, role }
+      });
     }
 
-    return saleId;
-  });
-
-  const saleId = checkoutTx();
-
-  const sale = db.prepare(`
-    SELECT s.*, c.name as customer_name, u.full_name as cashier_name
-    FROM sales s
-    LEFT JOIN customers c ON s.customer_id = c.id
-    LEFT JOIN users u ON s.user_id = u.id
-    WHERE s.id = ?
-  `).get(saleId);
-
-  const saleItems = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(saleId);
-  const settings = db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(storeId);
-
-  res.status(201).json({
-    success: true,
-    sale,
-    items: saleItems,
-    settings
-  });
-});
-
-// Invoices: List Invoices
-app.get(['/api/invoices', '/api/sales'], authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const { query, limit = 50 } = req.query;
-
-  let sql = `
-    SELECT s.*, c.name as customer_name, u.full_name as cashier_name
-    FROM sales s
-    LEFT JOIN customers c ON s.customer_id = c.id
-    LEFT JOIN users u ON s.user_id = u.id
-    WHERE s.store_id = ?
-  `;
-  const params = [storeId];
-
-  if (query) {
-    sql += ' AND (s.invoice_no LIKE ? OR c.name LIKE ?)';
-    const term = `%${query.trim()}%`;
-    params.push(term, term);
-  }
-
-  sql += ' ORDER BY s.id DESC LIMIT ?';
-  params.push(parseInt(limit, 10));
-
-  const invoices = db.prepare(sql).all(...params);
-  res.json(invoices);
-});
-
-// Invoices: Single Invoice with Items
-app.get('/api/invoices/:id', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const sale = db.prepare(`
-    SELECT s.*, c.name as customer_name, c.phone as customer_phone, u.full_name as cashier_name
-    FROM sales s
-    LEFT JOIN customers c ON s.customer_id = c.id
-    LEFT JOIN users u ON s.user_id = u.id
-    WHERE (s.id = ? OR s.invoice_no = ?) AND s.store_id = ?
-  `).get(req.params.id, req.params.id, storeId);
-
-  if (!sale) return res.status(404).json({ error: 'Invoice not found' });
-
-  const items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(sale.id);
-  const settings = db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(storeId);
-
-  res.json({ sale, items, settings });
-});
-
-// Sales Returns: Process Return & Restock
-app.post('/api/returns', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const { invoice_no, items, reason, restock } = req.body;
-
-  if (!invoice_no || !items || !items.length) {
-    return res.status(400).json({ error: 'Invoice number and return items are required' });
-  }
-
-  const sale = db.prepare('SELECT id FROM sales WHERE invoice_no = ?').get(invoice_no);
-  if (!sale) return res.status(404).json({ error: 'Original invoice not found' });
-
-  let refundTotal = 0.0;
-  for (const it of items) {
-    refundTotal += it.refund_price * it.quantity;
-  }
-
-  const countRow = db.prepare('SELECT count(*) as cnt FROM sale_returns').get();
-  const returnNo = `RET-${new Date().getFullYear()}-${(countRow.cnt + 1).toString().padStart(5, '0')}`;
-
-  const returnTx = db.transaction(() => {
-    const returnInfo = db.prepare(`
-      INSERT INTO sale_returns (return_no, sale_id, invoice_no, store_id, refund_amount, reason, restocked)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(returnNo, sale.id, invoice_no, storeId, refundTotal, reason || 'Customer Return', restock ? 1 : 0);
-
-    const returnId = returnInfo.lastInsertRowid;
-
-    const insertItem = db.prepare(`
-      INSERT INTO sale_return_items (return_id, product_id, quantity, refund_price, total_refund)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    const restockStmt = db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?');
-
-    for (const it of items) {
-      insertItem.run(returnId, it.product_id, it.quantity, it.refund_price, it.refund_price * it.quantity);
-      if (restock) {
-        restockStmt.run(it.quantity, it.product_id);
+    if (pathname === '/api/auth/login' && method === 'POST') {
+      const body = await parseBody(req);
+      const { username, password } = body;
+      if (!username || !password) {
+        return sendJson(res, 400, { error: 'Username and password required' });
       }
-    }
 
-    return returnId;
-  });
+      const user = db.prepare('SELECT u.*, s.name as storeName FROM users u LEFT JOIN stores s ON u.store_id = s.id WHERE u.username = ?')
+        .get(username);
 
-  const returnId = returnTx();
-  res.json({ success: true, returnNo, refundAmount: refundTotal });
-});
-
-// Customers: List & Search
-app.get('/api/customers', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const { query } = req.query;
-
-  let sql = 'SELECT * FROM customers WHERE store_id = ?';
-  const params = [storeId];
-  if (query) {
-    sql += ' AND (name LIKE ? OR phone LIKE ?)';
-    const term = `%${query.trim()}%`;
-    params.push(term, term);
-  }
-  sql += ' ORDER BY name ASC';
-  res.json(db.prepare(sql).all(...params));
-});
-
-// Customers: Ledger
-app.get('/api/customers/:id/ledger', authenticateToken, (req, res) => {
-  const customerId = parseInt(req.params.id, 10);
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-
-  const ledger = db.prepare('SELECT * FROM customer_ledger WHERE customer_id = ? ORDER BY id DESC').all(customerId);
-  res.json({ customer, ledger });
-});
-
-// Customers: Record Payment
-app.post('/api/customers/:id/payment', authenticateToken, (req, res) => {
-  const customerId = parseInt(req.params.id, 10);
-  const { amount, notes } = req.body;
-  const payAmt = parseFloat(amount);
-
-  if (!payAmt || payAmt <= 0) return res.status(400).json({ error: 'Valid payment amount required' });
-
-  const customer = db.prepare('SELECT current_balance FROM customers WHERE id = ?').get(customerId);
-  if (!customer) return res.status(404).json({ error: 'Customer not found' });
-
-  const newBal = customer.current_balance - payAmt;
-
-  const paymentTx = db.transaction(() => {
-    db.prepare('UPDATE customers SET current_balance = ? WHERE id = ?').run(newBal, customerId);
-    db.prepare(`
-      INSERT INTO customer_ledger (customer_id, transaction_type, debit, credit, balance_after, notes)
-      VALUES (?, 'PAYMENT_RECEIVED', 0.0, ?, ?, ?)
-    `).run(customerId, payAmt, newBal, notes || 'Customer Cash/Online Payment');
-  });
-
-  paymentTx();
-  res.json({ success: true, newBalance: newBal });
-});
-
-// Suppliers: List
-app.get('/api/suppliers', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  res.json(db.prepare('SELECT * FROM suppliers WHERE store_id = ? ORDER BY name ASC').all(storeId));
-});
-
-// Purchases: List & Add Purchase
-app.get('/api/purchases', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const purchases = db.prepare(`
-    SELECT p.*, s.name as supplier_name 
-    FROM purchases p
-    LEFT JOIN suppliers s ON p.supplier_id = s.id
-    WHERE p.store_id = ? ORDER BY p.id DESC
-  `).all(storeId);
-  res.json(purchases);
-});
-
-app.post('/api/purchases', authenticateToken, requireAdmin, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const { supplier_id, items, paid_amount, payment_method, notes } = req.body;
-
-  if (!items || !items.length) return res.status(400).json({ error: 'Items required for purchase' });
-
-  let totalAmount = 0.0;
-  for (const it of items) {
-    totalAmount += it.unit_cost * it.quantity;
-  }
-
-  const countRow = db.prepare('SELECT count(*) as cnt FROM purchases').get();
-  const purchaseNo = `PO-${new Date().getFullYear()}-${(countRow.cnt + 1).toString().padStart(5, '0')}`;
-
-  const purchaseTx = db.transaction(() => {
-    const pInfo = db.prepare(`
-      INSERT INTO purchases (purchase_no, supplier_id, store_id, total_amount, paid_amount, payment_method, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(purchaseNo, supplier_id || null, storeId, totalAmount, paid_amount || 0.0, payment_method || 'CASH', notes || null);
-
-    const purchaseId = pInfo.lastInsertRowid;
-
-    const insertItem = db.prepare(`
-      INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_cost, total_cost)
-      VALUES (?, ?, ?, ?, ?)
-    `);
-
-    const updateStock = db.prepare(`
-      UPDATE products SET 
-        stock_quantity = stock_quantity + ?,
-        purchase_price = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `);
-
-    for (const it of items) {
-      insertItem.run(purchaseId, it.product_id, it.quantity, it.unit_cost, it.unit_cost * it.quantity);
-      updateStock.run(it.quantity, it.unit_cost, it.product_id);
-    }
-
-    // Update supplier ledger
-    if (supplier_id) {
-      const supp = db.prepare('SELECT payable_balance FROM suppliers WHERE id = ?').get(supplier_id);
-      const remainingDue = totalAmount - (parseFloat(paid_amount) || 0.0);
-      const newPayable = (supp ? supp.payable_balance : 0.0) + remainingDue;
-
-      db.prepare('UPDATE suppliers SET payable_balance = ? WHERE id = ?').run(newPayable, supplier_id);
-      db.prepare(`
-        INSERT INTO supplier_ledger (supplier_id, transaction_type, reference_no, credit, debit, balance_after, notes)
-        VALUES (?, 'PURCHASE', ?, ?, ?, ?, ?)
-      `).run(supplier_id, purchaseNo, totalAmount, paid_amount || 0.0, newPayable, `Stock Inward ${purchaseNo}`);
-    }
-
-    return purchaseId;
-  });
-
-  const purchaseId = purchaseTx();
-  res.status(201).json({ success: true, purchaseNo, totalAmount });
-});
-
-// Expenses: List & Create
-app.get('/api/expenses', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  res.json(db.prepare('SELECT * FROM expenses WHERE store_id = ? ORDER BY id DESC').all(storeId));
-});
-
-app.post('/api/expenses', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const { category, amount, payment_method, recipient, description } = req.body;
-  const expAmt = parseFloat(amount);
-
-  if (!category || !expAmt || expAmt <= 0) {
-    return res.status(400).json({ error: 'Valid category and amount required' });
-  }
-
-  const info = db.prepare(`
-    INSERT INTO expenses (category, amount, payment_method, recipient, description, store_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(category, expAmt, payment_method || 'CASH', recipient || null, description || null, storeId);
-
-  res.status(201).json({ success: true, id: info.lastInsertRowid });
-});
-
-// Register Shifts & Daily Closing
-app.get('/api/shifts/active', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const shift = db.prepare(`
-    SELECT rs.*, u.full_name as cashier_name
-    FROM register_shifts rs
-    JOIN users u ON rs.user_id = u.id
-    WHERE rs.store_id = ? AND rs.status = 'OPEN'
-    ORDER BY rs.id DESC LIMIT 1
-  `).get(storeId);
-  res.json(shift || null);
-});
-
-app.post('/api/shifts/open', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const userId = req.user.id;
-  const { opening_cash, notes } = req.body;
-
-  const existing = db.prepare("SELECT id FROM register_shifts WHERE store_id = ? AND status = 'OPEN'").get(storeId);
-  if (existing) return res.status(400).json({ error: 'A shift is already open for this store' });
-
-  const info = db.prepare(`
-    INSERT INTO register_shifts (user_id, store_id, opening_cash, status, notes)
-    VALUES (?, ?, ?, 'OPEN', ?)
-  `).run(userId, storeId, parseFloat(opening_cash) || 0.0, notes || null);
-
-  res.status(201).json({ success: true, shiftId: info.lastInsertRowid });
-});
-
-app.post('/api/shifts/close', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const { actual_cash, notes } = req.body;
-
-  const activeShift = db.prepare("SELECT * FROM register_shifts WHERE store_id = ? AND status = 'OPEN' ORDER BY id DESC LIMIT 1").get(storeId);
-  if (!activeShift) return res.status(400).json({ error: 'No active shift found to close' });
-
-  // Calculate sales cash collected during this shift
-  const cashSales = db.prepare(`
-    SELECT COALESCE(SUM(paid_amount - change_due), 0.0) as totalCash
-    FROM sales 
-    WHERE shift_id = ? AND payment_method = 'CASH' AND status = 'COMPLETED'
-  `).get(activeShift.id).totalCash;
-
-  const expectedCash = activeShift.opening_cash + cashSales;
-  const actualCash = parseFloat(actual_cash) || 0.0;
-  const diff = actualCash - expectedCash; // Positive = excess, Negative = shortage
-
-  db.prepare(`
-    UPDATE register_shifts SET
-      closed_at = CURRENT_TIMESTAMP,
-      closing_cash_actual = ?,
-      expected_cash = ?,
-      cash_shortage_excess = ?,
-      status = 'CLOSED',
-      notes = ?
-    WHERE id = ?
-  `).run(actualCash, expectedCash, diff, notes || null, activeShift.id);
-
-  res.json({
-    success: true,
-    openingCash: activeShift.opening_cash,
-    cashSales,
-    expectedCash,
-    actualCash,
-    cashShortageExcess: diff
-  });
-});
-
-// Reports & Financial Analytics
-app.get('/api/reports/summary', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-
-  const totalGross = db.prepare('SELECT COALESCE(SUM(total_amount), 0.0) as gross FROM sales WHERE store_id = ? AND status = "COMPLETED"').get(storeId).gross;
-  const totalInvoices = db.prepare('SELECT count(*) as count FROM sales WHERE store_id = ? AND status = "COMPLETED"').get(storeId).count;
-  const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0.0) as exp FROM expenses WHERE store_id = ?').get(storeId).exp;
-
-  const totalProfit = db.prepare(`
-    SELECT COALESCE(SUM((si.sale_price - si.purchase_price) * si.quantity), 0.0) as profit
-    FROM sale_items si
-    JOIN sales s ON si.sale_id = s.id
-    WHERE s.store_id = ? AND s.status = 'COMPLETED'
-  `).get(storeId).profit;
-
-  const netPnl = totalProfit - totalExpenses;
-
-  // Payment Breakdown
-  const payments = db.prepare(`
-    SELECT payment_method, COUNT(*) as tx_count, COALESCE(SUM(total_amount), 0.0) as total
-    FROM sales WHERE store_id = ? AND status = 'COMPLETED'
-    GROUP BY payment_method
-  `).all(storeId);
-
-  // Top 5 Selling Products
-  const topProducts = db.prepare(`
-    SELECT product_name, SUM(quantity) as units_sold, SUM(total_price) as revenue
-    FROM sale_items si
-    JOIN sales s ON si.sale_id = s.id
-    WHERE s.store_id = ? AND s.status = 'COMPLETED'
-    GROUP BY product_id ORDER BY units_sold DESC LIMIT 5
-  `).all(storeId);
-
-  res.json({
-    totalGross,
-    totalInvoices,
-    totalProfit,
-    totalExpenses,
-    netPnl,
-    payments,
-    topProducts
-  });
-});
-
-// Store Settings
-app.get('/api/settings', authenticateToken, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const settings = db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(storeId);
-  res.json(settings || {});
-});
-
-app.put('/api/settings', authenticateToken, requireAdmin, (req, res) => {
-  const storeId = req.user.store_id || 1;
-  const {
-    store_name, tagline, address, phone, email, tax_number,
-    currency_symbol, default_tax_percent, receipt_paper_size,
-    receipt_header, receipt_footer, sound_enabled, dark_mode
-  } = req.body;
-
-  db.prepare(`
-    UPDATE store_settings SET
-      store_name = ?, tagline = ?, address = ?, phone = ?, email = ?, tax_number = ?,
-      currency_symbol = ?, default_tax_percent = ?, receipt_paper_size = ?,
-      receipt_header = ?, receipt_footer = ?, sound_enabled = ?, dark_mode = ?
-    WHERE store_id = ?
-  `).run(
-    store_name, tagline, address, phone, email, tax_number,
-    currency_symbol || 'Rs', parseFloat(default_tax_percent) || 0.0, receipt_paper_size || '80mm',
-    receipt_header, receipt_footer, sound_enabled ? 1 : 0, dark_mode ? 1 : 0,
-    storeId
-  );
-
-  res.json({ success: true, settings: db.prepare('SELECT * FROM store_settings WHERE store_id = ?').get(storeId) });
-});
-
-// Users / Staff Management
-app.get('/api/users', authenticateToken, requireAdmin, (req, res) => {
-  res.json(db.prepare('SELECT id, username, full_name, role, store_id, pin, is_active FROM users').all());
-});
-
-app.post('/api/users', authenticateToken, requireAdmin, (req, res) => {
-  const { username, password, full_name, role, pin, store_id } = req.body;
-  if (!username || !password || !full_name) {
-    return res.status(400).json({ error: 'Username, password, and full name required' });
-  }
-
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username.trim());
-  if (existing) return res.status(400).json({ error: 'Username already in use' });
-
-  const hash = bcrypt.hashSync(password, 10);
-  const info = db.prepare(`
-    INSERT INTO users (username, password_hash, full_name, role, pin, store_id)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(username.trim(), hash, full_name.trim(), role || 'CASHIER', pin || null, store_id || 1);
-
-  res.status(201).json({ success: true, id: info.lastInsertRowid });
-});
-
-// --------------------------------------------------------------------------
-// TWO-WAY SYNCHRONIZATION API (For Android App & Offline Web Clients)
-// --------------------------------------------------------------------------
-
-// Pull updates created or updated since checkpoint timestamp
-app.get('/api/sync/pull', authenticateOrTerminal, (req, res) => {
-  const { since } = req.query;
-  let sinceTime = '1970-01-01 00:00:00';
-  if (since) {
-    if (/^\d+$/.test(since)) {
-      sinceTime = new Date(parseInt(since, 10)).toISOString().replace('T', ' ').substring(0, 19);
-    } else {
-      sinceTime = since.replace('T', ' ').substring(0, 19);
-    }
-  }
-  const storeId = req.user.store_id || 1;
-
-  const products = db.prepare('SELECT * FROM products WHERE store_id = ? AND datetime(updated_at) >= datetime(?)').all(storeId, sinceTime);
-  const sales = db.prepare('SELECT * FROM sales WHERE store_id = ? AND datetime(created_at) >= datetime(?)').all(storeId, sinceTime);
-  const customers = db.prepare('SELECT * FROM customers WHERE store_id = ? AND datetime(created_at) >= datetime(?)').all(storeId, sinceTime);
-  const suppliers = db.prepare('SELECT * FROM suppliers WHERE store_id = ? AND datetime(created_at) >= datetime(?)').all(storeId, sinceTime);
-  const serverTime = new Date().toISOString();
-
-  res.json({
-    serverTime,
-    storeId,
-    products,
-    sales,
-    customers,
-    suppliers
-  });
-});
-
-// Push client transactions and entities to central server
-app.post('/api/sync/push', authenticateOrTerminal, (req, res) => {
-  const { device_id, sales, products, customers } = req.body;
-  const storeId = req.user.store_id || 1;
-
-  let insertedSales = 0;
-  let updatedProducts = 0;
-
-  const syncTx = db.transaction(() => {
-    // 1. Process offline-created sales with Idempotency check on invoice_no
-    if (sales && sales.length) {
-      for (const s of sales) {
-        const existing = db.prepare('SELECT id FROM sales WHERE invoice_no = ?').get(s.invoice_no);
-        if (!existing) {
-          const sInfo = db.prepare(`
-            INSERT INTO sales (
-              invoice_no, store_id, user_id, customer_id,
-              subtotal, discount_amount, tax_amount, total_amount, paid_amount,
-              change_due, payment_method, status, notes, sync_origin, sync_status, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ANDROID', 'SYNCED', ?)
-          `).run(
-            s.invoice_no, storeId, req.user.id, s.customer_id || null,
-            s.subtotal, s.discount_amount || 0.0, s.tax_amount || 0.0, s.total_amount, s.paid_amount,
-            s.change_due || 0.0, s.payment_method || 'CASH', s.status || 'COMPLETED',
-            s.notes || null, s.created_at || new Date().toISOString()
-          );
-
-          insertedSales++;
-
-          if (s.items && s.items.length) {
-            const insertItem = db.prepare(`
-              INSERT INTO sale_items (sale_id, product_id, product_name, barcode, quantity, sale_price, purchase_price, total_price)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `);
-            const deduct = db.prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE barcode = ?');
-
-            for (const it of s.items) {
-              insertItem.run(sInfo.lastInsertRowid, it.product_id || 1, it.product_name, it.barcode, it.quantity, it.sale_price, it.purchase_price || 0.0, it.sale_price * it.quantity);
-              deduct.run(it.quantity, it.barcode);
-            }
-          }
-        }
+      if (!user || !verifyPassword(password, user.password_hash)) {
+        return sendJson(res, 401, { error: 'Invalid username or password' });
       }
+
+      // Transparent controlled migration to Bcrypt
+      if (!user.password_hash.startsWith('$2')) {
+        const upgraded = hashPassword(password);
+        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(upgraded, user.id);
+      }
+
+      const token = signToken({ userId: user.id, username: user.username, storeId: user.store_id, role: user.role }, JWT_SECRET, 86400);
+      const refreshToken = crypto.randomBytes(32).toString('hex');
+      const now = Date.now();
+      db.prepare('INSERT INTO refresh_tokens (user_id, token, expires_at, created_at) VALUES (?, ?, ?, ?)')
+        .run(user.id, refreshToken, now + (30 * 86400 * 1000), now);
+
+      return sendJson(res, 200, {
+        token,
+        refreshToken,
+        user: { id: user.id, username: user.username, storeId: user.store_id, storeName: user.storeName || 'Main Store', role: user.role }
+      });
     }
 
-    // 2. Process products created on client
-    if (products && products.length) {
+    if (pathname === '/api/auth/logout' && method === 'POST') {
+      if (authUser) {
+        db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(authUser.userId);
+      }
+      return sendJson(res, 200, { success: true, message: 'Session revoked and logged out successfully' });
+    }
+
+    if (pathname === '/api/auth/refresh' && method === 'POST') {
+      const body = await parseBody(req);
+      const { refreshToken } = body;
+      if (!refreshToken) return sendJson(res, 400, { error: 'Refresh token required' });
+
+      const record = db.prepare('SELECT r.*, u.username, u.store_id, u.role FROM refresh_tokens r JOIN users u ON r.user_id = u.id WHERE r.token = ? AND r.expires_at > ?')
+        .get(refreshToken, Date.now());
+
+      if (!record) return sendJson(res, 401, { error: 'Invalid or expired refresh token' });
+
+      const newToken = signToken({ userId: record.user_id, username: record.username, storeId: record.store_id, role: record.role }, JWT_SECRET, 86400);
+      return sendJson(res, 200, { token: newToken, refreshToken });
+    }
+
+    if (pathname === '/api/auth/change-username' && method === 'POST') {
+      if (!authUser) return sendJson(res, 401, { error: 'Unauthorized' });
+      const body = await parseBody(req);
+      const { newUsername } = body;
+      if (!newUsername) return sendJson(res, 400, { error: 'New username required' });
+
+      const conflict = db.prepare('SELECT id FROM users WHERE username = ? AND id != ?').get(newUsername, authUser.userId);
+      if (conflict) return sendJson(res, 409, { error: 'Username already in use' });
+
+      db.prepare('UPDATE users SET username = ? WHERE id = ?').run(newUsername, authUser.userId);
+      return sendJson(res, 200, { success: true, message: 'Username updated', username: newUsername });
+    }
+
+    if (pathname === '/api/auth/change-password' && method === 'POST') {
+      if (!authUser) return sendJson(res, 401, { error: 'Unauthorized' });
+      const body = await parseBody(req);
+      const { currentPassword, newPassword } = body;
+      if (!currentPassword || !newPassword) return sendJson(res, 400, { error: 'Current and new password required' });
+
+      const user = db.prepare('SELECT id, password_hash FROM users WHERE id = ?').get(authUser.userId);
+      if (!user || !verifyPassword(currentPassword, user.password_hash)) {
+        return sendJson(res, 401, { error: 'Current password incorrect' });
+      }
+
+      const newHash = hashPassword(newPassword);
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newHash, authUser.userId);
+      // Revoke all existing sessions on password change
+      db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(authUser.userId);
+      return sendJson(res, 200, { success: true, message: 'Password updated successfully. All other sessions revoked.' });
+    }
+
+    if (pathname === '/api/auth/recover-account' && method === 'POST') {
+      const body = await parseBody(req);
+      const { username, recoveryPin, newPassword } = body;
+      if (!username || !recoveryPin || !newPassword) {
+        return sendJson(res, 400, { error: 'Username, recovery PIN, and new password required' });
+      }
+
+      const user = db.prepare('SELECT id, recovery_pin_hash FROM users WHERE username = ?').get(username);
+      if (!user || !verifyRecoveryPin(recoveryPin, user.recovery_pin_hash)) {
+        return sendJson(res, 401, { error: 'Invalid recovery details' });
+      }
+
+      const newPassHash = hashPassword(newPassword);
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(newPassHash, user.id);
+      db.prepare('DELETE FROM refresh_tokens WHERE user_id = ?').run(user.id); // revoke sessions
+
+      return sendJson(res, 200, { success: true, message: 'Password reset successfully. Please login with your new password.' });
+    }
+
+    if (pathname === '/api/auth/me' && method === 'GET') {
+      if (!authUser) return sendJson(res, 401, { error: 'Unauthorized' });
+      const user = db.prepare('SELECT u.id, u.username, u.store_id, u.role, s.name as storeName FROM users u LEFT JOIN stores s ON u.store_id = s.id WHERE u.id = ?')
+        .get(authUser.userId);
+      if (!user) return sendJson(res, 404, { error: 'User not found' });
+      return sendJson(res, 200, user);
+    }
+
+    // ---------------- 4. Real Bidirectional Synchronization ----------------
+    // Android sends batch of offline changes to server
+    if (pathname === '/api/sync/push' && method === 'POST') {
+      const effectiveStoreId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      const body = await parseBody(req);
+      const { products = [], customers = [], invoices = [] } = body;
+      const now = Date.now();
+
+      let syncedInvoices = 0;
+      let syncedProducts = 0;
+      let syncedCustomers = 0;
+
+      // Upsert Products
+      const prodUpsert = db.prepare(`
+        INSERT INTO products (store_id, name, barcode, category, purchase_price, sale_price, stock_quantity, unit, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      const prodUpdate = db.prepare(`
+        UPDATE products SET name = ?, category = ?, purchase_price = ?, sale_price = ?, stock_quantity = ?, unit = ?, updated_at = ?
+        WHERE barcode = ? AND store_id = ?
+      `);
+
       for (const p of products) {
-        const existing = db.prepare('SELECT id FROM products WHERE barcode = ?').get(p.barcode);
-        if (!existing) {
-          db.prepare(`
-            INSERT INTO products (name, barcode, sku, category, brand, purchase_price, sale_price, stock_quantity, unit, store_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `).run(p.name, p.barcode, p.sku || null, p.category || 'General', p.brand || 'General', p.purchase_price || 0.0, p.sale_price, p.stock_quantity || 0.0, p.unit || 'Pcs', storeId);
-          updatedProducts++;
+        const exist = db.prepare('SELECT id, updated_at FROM products WHERE barcode = ? AND store_id = ?').get(p.barcode, effectiveStoreId);
+        if (exist) {
+          if (!exist.updated_at || (p.updatedAt && p.updatedAt > exist.updated_at)) {
+            prodUpdate.run(p.name, p.category || 'General', p.purchasePrice || 0, p.salePrice || 0, p.stockQuantity || 0, p.unit || 'Pcs', p.updatedAt || now, p.barcode, effectiveStoreId);
+            syncedProducts++;
+          }
+        } else {
+          prodUpsert.run(effectiveStoreId, p.name, p.barcode, p.category || 'General', p.purchasePrice || 0, p.salePrice || 0, p.stockQuantity || 0, p.unit || 'Pcs', p.updatedAt || now);
+          syncedProducts++;
         }
+      }
+
+      // Upsert Customers
+      const custUpsert = db.prepare(`
+        INSERT INTO customers (store_id, name, phone, address, current_balance, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const c of customers) {
+        const exist = db.prepare('SELECT id FROM customers WHERE name = ? AND store_id = ?').get(c.name, effectiveStoreId);
+        if (!exist) {
+          custUpsert.run(effectiveStoreId, c.name, c.phone || '', c.address || '', c.currentBalance || 0, c.updatedAt || now);
+          syncedCustomers++;
+        }
+      }
+
+      // Insert Invoices (idempotent duplicate prevention)
+      const invStmt = db.prepare(`
+        INSERT OR IGNORE INTO invoices (
+          store_id, invoice_no, customer_id, customer_name, subtotal, discount_amount, tax_amount,
+          total_amount, amount_received, amount_applied, change_due, balance_due,
+          payment_method, payment_status, cashier_name, sync_status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?)
+      `);
+
+      for (const inv of invoices) {
+        const res = invStmt.run(
+          effectiveStoreId,
+          inv.invoiceNo,
+          inv.customerId || null,
+          inv.customerName || 'Walking Customer',
+          inv.subtotal || 0,
+          inv.discountAmount || 0,
+          inv.taxAmount || 0,
+          inv.totalAmount || 0,
+          inv.amountReceived || 0,
+          inv.amountApplied || 0,
+          inv.changeDue || 0,
+          inv.balanceDue || 0,
+          inv.paymentMethod || 'CASH',
+          inv.paymentStatus || 'PAID',
+          inv.cashierName || 'Android POS',
+          inv.createdAt || now
+        );
+        if (res.changes > 0) syncedInvoices++;
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        serverTimestamp: now,
+        storeId: effectiveStoreId,
+        syncedProducts,
+        syncedCustomers,
+        syncedInvoices
+      });
+    }
+
+    // Android pulls changes from server
+    if (pathname === '/api/sync/pull' && method === 'GET') {
+      const effectiveStoreId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      const since = Number(parsedUrl.searchParams.get('since')) || 0;
+
+      const products = db.prepare('SELECT * FROM products WHERE store_id = ? AND (updated_at > ? OR ? = 0)').all(effectiveStoreId, since, since);
+      const customers = db.prepare('SELECT * FROM customers WHERE store_id = ? AND (updated_at > ? OR ? = 0)').all(effectiveStoreId, since, since);
+      const invoices = db.prepare('SELECT * FROM invoices WHERE store_id = ? AND (created_at > ? OR ? = 0) ORDER BY id DESC LIMIT 100').all(effectiveStoreId, since, since);
+
+      return sendJson(res, 200, {
+        serverTimestamp: Date.now(),
+        storeId: effectiveStoreId,
+        products,
+        customers,
+        invoices
+      });
+    }
+
+    // ---------------- 5. Business Modules (Products, Invoices, Customers, Reports) ----------------
+    // Products
+    if (pathname === '/api/products') {
+      const storeId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      if (method === 'GET') {
+        const search = parsedUrl.searchParams.get('search');
+        let sql = 'SELECT * FROM products WHERE store_id = ?';
+        const params = [storeId];
+        if (search) {
+          sql += ' AND (name LIKE ? OR barcode LIKE ?)';
+          params.push(`%${search}%`, `%${search}%`);
+        }
+        sql += ' ORDER BY id DESC';
+        return sendJson(res, 200, db.prepare(sql).all(...params));
+      }
+      if (method === 'POST') {
+        const body = await parseBody(req);
+        const { name, barcode, category = 'General', purchase_price = 0, sale_price = 0, stock_quantity = 0, unit = 'Pcs' } = body;
+        const result = db.prepare(
+          'INSERT INTO products (store_id, name, barcode, category, purchase_price, sale_price, stock_quantity, unit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        ).run(storeId, name, barcode, category, purchase_price, sale_price, stock_quantity, unit, Date.now());
+        return sendJson(res, 201, { id: Number(result.lastInsertRowid), store_id: storeId, name, barcode, sale_price, stock_quantity });
       }
     }
 
-    // Record checkpoint
-    db.prepare(`
-      INSERT INTO sync_checkpoints (device_id, records_synced, direction)
-      VALUES (?, ?, 'PUSH')
-    `).run(device_id || 'UNKNOWN-CLIENT', insertedSales + updatedProducts);
-  });
+    // Invoices / Sales
+    if (pathname === '/api/invoices' || pathname === '/api/sales') {
+      const storeId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      if (method === 'GET') {
+        return sendJson(res, 200, db.prepare('SELECT * FROM invoices WHERE store_id = ? ORDER BY id DESC').all(storeId));
+      }
+      if (method === 'POST') {
+        const body = await parseBody(req);
+        const {
+          invoiceNo,
+          customerId = null,
+          customerName = 'Walking Customer',
+          items = [],
+          subtotal = 0,
+          discountAmount = 0,
+          taxAmount = 0,
+          totalAmount,
+          amountReceived = 0,
+          paymentMethod = 'CASH',
+          cashierName = 'Cashier 1'
+        } = body;
 
-  syncTx();
+        const total = Math.max(0, totalAmount !== undefined ? Number(totalAmount) : (Number(subtotal) - Number(discountAmount) + Number(taxAmount)));
+        const received = Math.max(0, Number(amountReceived) || 0);
 
-  res.json({
-    success: true,
-    serverTime: new Date().toISOString(),
-    insertedSales,
-    updatedProducts
-  });
+        const amountApplied = Math.min(total, received);
+        const changeDue = Math.max(0, received - total);
+        const balanceDue = Math.max(0, total - amountApplied);
+
+        let paymentStatus = 'UNPAID';
+        if (balanceDue <= 0.001) {
+          paymentStatus = 'PAID';
+        } else if (amountApplied > 0) {
+          paymentStatus = 'PARTIALLY_PAID';
+        }
+
+        const generatedNo = invoiceNo || `INV-${Date.now().toString().slice(-4)}-${Math.floor(Math.random() * 9000 + 1000)}`;
+        const now = body.createdAt || Date.now();
+
+        const invResult = db.prepare(`
+          INSERT INTO invoices (
+            store_id, invoice_no, customer_id, customer_name, subtotal, discount_amount, tax_amount,
+            total_amount, amount_received, amount_applied, change_due, balance_due,
+            payment_method, payment_status, cashier_name, sync_status, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'SYNCED', ?)
+        `).run(storeId, generatedNo, customerId, customerName, subtotal, discountAmount, taxAmount, total, received, amountApplied, changeDue, balanceDue, paymentMethod, paymentStatus, cashierName, now);
+
+        const invoiceId = Number(invResult.lastInsertRowid);
+
+        const itemStmt = db.prepare('INSERT INTO invoice_items (store_id, invoice_id, product_id, product_name, barcode, quantity, unit_price, total_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        const stockStmt = db.prepare('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ? AND store_id = ?');
+
+        for (const item of items) {
+          const pId = item.productId || item.id || 0;
+          const pName = item.productName || item.name || '';
+          const bCode = item.barcode || '';
+          const qty = Number(item.quantity) || 1;
+          const uPrice = Number(item.unitPrice || item.salePrice) || 0;
+          const tPrice = Number(item.totalPrice) || (qty * uPrice);
+          itemStmt.run(storeId, invoiceId, pId, pName, bCode, qty, uPrice, tPrice);
+          if (pId > 0) stockStmt.run(qty, pId, storeId);
+        }
+
+        if (amountApplied > 0) {
+          const idempotencyKey = `INIT-${invoiceId}`;
+          db.prepare(`
+            INSERT INTO payment_records (store_id, invoice_id, invoice_no, customer_id, amount, payment_method, cashier_name, notes, idempotency_key, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'Initial checkout payment', ?, ?)
+          `).run(storeId, invoiceId, generatedNo, customerId, amountApplied, paymentMethod, cashierName, idempotencyKey, now);
+        }
+
+        if (balanceDue > 0.001 && customerId) {
+          db.prepare('UPDATE customers SET current_balance = current_balance + ? WHERE id = ?').run(balanceDue, customerId);
+          const cRow = db.prepare('SELECT current_balance FROM customers WHERE id = ?').get(customerId);
+          const balAfter = cRow ? cRow.current_balance : balanceDue;
+          db.prepare(`
+            INSERT INTO customer_ledger (store_id, customer_id, invoice_id, transaction_type, debit_amount, credit_amount, balance_after, description, created_at)
+            VALUES (?, ?, ?, 'SALE_CREDIT', ?, 0.0, ?, ?, ?)
+          `).run(storeId, customerId, invoiceId, balanceDue, balAfter, `Unpaid balance on invoice ${generatedNo}`, now);
+        }
+
+        return sendJson(res, 201, {
+          id: invoiceId,
+          invoiceNo: generatedNo,
+          storeId,
+          totalAmount: total,
+          amountReceived: received,
+          amountApplied,
+          changeDue,
+          balanceDue,
+          paymentStatus,
+          paymentMethod
+        });
+      }
+    }
+
+    // Later Payment Settlement
+    if (pathname === '/api/invoices/settle' && method === 'POST') {
+      const storeId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      const body = await parseBody(req);
+      const { invoiceId, paymentAmount, paymentMethod = 'CASH', cashierName = 'Cashier', idempotencyKey = `PAY-${Date.now()}` } = body;
+      const payAmt = Number(paymentAmount) || 0;
+
+      if (!invoiceId || payAmt <= 0) return sendJson(res, 400, { error: 'Valid invoiceId and positive paymentAmount required' });
+
+      const existing = db.prepare('SELECT * FROM payment_records WHERE idempotency_key = ?').get(idempotencyKey);
+      if (existing) return sendJson(res, 409, { error: 'Duplicate payment transaction detected', record: existing });
+
+      const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND store_id = ?').get(invoiceId, storeId);
+      if (!invoice) return sendJson(res, 404, { error: 'Invoice not found or access denied for this store' });
+
+      const applied = Math.min(invoice.balance_due, payAmt);
+      const newBalance = Math.max(0, invoice.balance_due - applied);
+      const newStatus = newBalance <= 0.001 ? 'PAID' : 'PARTIALLY_PAID';
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO payment_records (store_id, invoice_id, invoice_no, customer_id, amount, payment_method, cashier_name, notes, idempotency_key, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'Balance settlement', ?, ?)
+      `).run(storeId, invoice.id, invoice.invoice_no, invoice.customer_id, applied, paymentMethod, cashierName, idempotencyKey, now);
+
+      db.prepare('UPDATE invoices SET amount_applied = amount_applied + ?, balance_due = ?, payment_status = ? WHERE id = ? AND store_id = ?')
+        .run(applied, newBalance, newStatus, invoice.id, storeId);
+
+      if (invoice.customer_id) {
+        db.prepare('UPDATE customers SET current_balance = MAX(0.0, current_balance - ?) WHERE id = ? AND store_id = ?').run(applied, invoice.customer_id, storeId);
+        const cRow = db.prepare('SELECT current_balance FROM customers WHERE id = ? AND store_id = ?').get(invoice.customer_id, storeId);
+        const balAfter = cRow ? cRow.current_balance : 0.0;
+        db.prepare(`
+          INSERT INTO customer_ledger (store_id, customer_id, invoice_id, transaction_type, debit_amount, credit_amount, balance_after, description, created_at)
+          VALUES (?, ?, ?, 'PAYMENT_RECEIVED', 0.0, ?, ?, ?, ?)
+        `).run(storeId, invoice.customer_id, invoice.id, applied, balAfter, `Payment received for invoice ${invoice.invoice_no}`, now);
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        invoiceId: invoice.id,
+        amountApplied: applied,
+        balanceDue: newBalance,
+        paymentStatus: newStatus
+      });
+    }
+
+    const paymentMatch = pathname.match(/^\/api\/invoices\/(\d+)\/payments$/);
+    if (paymentMatch && method === 'POST') {
+      const invoiceId = Number(paymentMatch[1]);
+      const storeId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      const body = await parseBody(req);
+      const { amount, paymentMethod = 'CASH', cashierName = 'Cashier', idempotencyKey = `PAY-${Date.now()}` } = body;
+      const payAmt = Number(amount) || 0;
+
+      if (payAmt <= 0) return sendJson(res, 400, { error: 'Payment amount must be greater than zero' });
+
+      const existing = db.prepare('SELECT * FROM payment_records WHERE idempotency_key = ?').get(idempotencyKey);
+      if (existing) return sendJson(res, 409, { error: 'Duplicate payment transaction detected', record: existing });
+
+      const invoice = db.prepare('SELECT * FROM invoices WHERE id = ? AND store_id = ?').get(invoiceId, storeId);
+      if (!invoice) return sendJson(res, 404, { error: 'Invoice not found or access denied for this store' });
+
+      const applied = Math.min(invoice.balance_due, payAmt);
+      const newBalance = Math.max(0, invoice.balance_due - applied);
+      const newStatus = newBalance <= 0.001 ? 'PAID' : 'PARTIALLY_PAID';
+      const now = Date.now();
+
+      db.prepare(`
+        INSERT INTO payment_records (store_id, invoice_id, invoice_no, customer_id, amount, payment_method, cashier_name, notes, idempotency_key, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'Later balance settlement', ?, ?)
+      `).run(storeId, invoice.id, invoice.invoice_no, invoice.customer_id, applied, paymentMethod, cashierName, idempotencyKey, now);
+
+      db.prepare('UPDATE invoices SET amount_applied = amount_applied + ?, balance_due = ?, payment_status = ? WHERE id = ? AND store_id = ?')
+        .run(applied, newBalance, newStatus, invoice.id, storeId);
+
+      if (invoice.customer_id) {
+        db.prepare('UPDATE customers SET current_balance = MAX(0.0, current_balance - ?) WHERE id = ?').run(applied, invoice.customer_id);
+        const cRow = db.prepare('SELECT current_balance FROM customers WHERE id = ?').get(invoice.customer_id);
+        const balAfter = cRow ? cRow.current_balance : 0.0;
+        db.prepare(`
+          INSERT INTO customer_ledger (store_id, customer_id, invoice_id, transaction_type, debit_amount, credit_amount, balance_after, description, created_at)
+          VALUES (?, ?, ?, 'PAYMENT_RECEIVED', 0.0, ?, ?, ?, ?)
+        `).run(storeId, invoice.customer_id, invoice.id, applied, balAfter, `Payment received for invoice ${invoice.invoice_no}`, now);
+      }
+
+      return sendJson(res, 200, {
+        success: true,
+        invoiceId: invoice.id,
+        amountApplied: applied,
+        balanceDue: newBalance,
+        paymentStatus: newStatus
+      });
+    }
+
+    // Customers & Ledger
+    if (pathname === '/api/customers') {
+      const storeId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      if (method === 'GET') {
+        return sendJson(res, 200, db.prepare('SELECT * FROM customers WHERE store_id = ? ORDER BY name ASC').all(storeId));
+      }
+      if (method === 'POST') {
+        const body = await parseBody(req);
+        const { name, phone = '', address = '', initialBalance = 0.0 } = body;
+        if (!name) return sendJson(res, 400, { error: 'Customer name required' });
+        const result = db.prepare(
+          'INSERT INTO customers (store_id, name, phone, address, current_balance, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(storeId, name, phone, address, initialBalance, Date.now());
+        return sendJson(res, 201, { id: Number(result.lastInsertRowid), storeId, name, phone, current_balance: initialBalance });
+      }
+    }
+
+    const ledgerMatch = pathname.match(/^\/api\/customers\/(\d+)\/ledger$/);
+    if (ledgerMatch && method === 'GET') {
+      const custId = Number(ledgerMatch[1]);
+      return sendJson(res, 200, db.prepare('SELECT * FROM customer_ledger WHERE customer_id = ? ORDER BY id DESC').all(custId));
+    }
+
+    // Reports
+    if (pathname === '/api/reports/summary' && method === 'GET') {
+      const storeId = authUser ? authUser.storeId : (Number(parsedUrl.searchParams.get('storeId')) || 1);
+      const rows = db.prepare('SELECT total_amount, amount_received, change_due, balance_due FROM invoices WHERE store_id = ?').all(storeId);
+      const totalSalesRevenue = rows.reduce((sum, r) => sum + (r.total_amount || 0), 0);
+      const totalCashReceived = rows.reduce((sum, r) => sum + (r.amount_received || 0), 0);
+      const totalChangeReturned = rows.reduce((sum, r) => sum + (r.change_due || 0), 0);
+      const netCashInDrawer = totalCashReceived - totalChangeReturned;
+      const totalReceivables = rows.reduce((sum, r) => sum + (r.balance_due || 0), 0);
+      return sendJson(res, 200, {
+        storeId: Number(storeId),
+        totalSalesRevenue,
+        totalCashReceived,
+        totalChangeReturned,
+        netCashInDrawer,
+        totalReceivables,
+        invoiceCount: rows.length
+      });
+    }
+
+    // ---------------- 6. Static Shell & PWA Assets ----------------
+    let staticFilePath = path.join(PUBLIC_DIR, pathname === '/' ? 'index.html' : pathname);
+    if (!fs.existsSync(staticFilePath)) {
+      staticFilePath = path.join(PUBLIC_DIR, 'index.html');
+    }
+    const ext = path.extname(staticFilePath).toLowerCase();
+    const mimeTypes = {
+      '.html': 'text/html; charset=utf-8',
+      '.js': 'application/javascript',
+      '.css': 'text/css',
+      '.json': 'application/json',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.svg': 'image/svg+xml'
+    };
+    return sendFile(res, staticFilePath, mimeTypes[ext] || 'text/html; charset=utf-8');
+
+  } catch (err) {
+    console.error('Server error on', pathname, err);
+    return sendJson(res, 500, { error: err.message });
+  }
 });
 
-// Catch-all 404 for unknown API endpoints
-app.use('/api', (req, res) => {
-  res.status(404).json({ error: 'API endpoint not found', path: req.originalUrl });
-});
-
-// Catch-all 404 for missing downloads (never disguise as HTML)
-app.use('/downloads', (req, res) => {
-  res.status(404).type('text/plain').send('File not found: ' + req.originalUrl);
-});
-
-// SPA routing: only serve index.html for recognized application views
-const validSpaRoutes = [
-  '/',
-  '/pos',
-  '/dashboard',
-  '/products',
-  '/invoices',
-  '/customers',
-  '/expenses',
-  '/shifts',
-  '/reports',
-  '/sync',
-  '/settings',
-  '/users',
-  '/download',
-  '/login'
-];
-
-validSpaRoutes.forEach(route => {
-  app.get(route, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  });
-});
-
-// Explicit 404 for any other unknown route
-app.use((req, res) => {
-  res.status(404).type('text/html').send(`
-    <!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <title>404 Page Not Found — CHOUDHURY POS</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #0f172a; color: #f8fafc; }
-          .card { text-align: center; padding: 40px; background: #1e293b; border-radius: 12px; border: 1px solid #334155; max-width: 480px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-          h1 { color: #f43f5e; margin: 0 0 10px; font-size: 24px; font-weight: 800; }
-          p { color: #94a3b8; font-size: 14px; line-height: 1.6; margin-bottom: 24px; }
-          a { display: inline-block; background: #10b981; color: white; padding: 10px 22px; border-radius: 8px; text-decoration: none; font-weight: 600; font-size: 14px; transition: background 0.2s; }
-          a:hover { background: #059669; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <h1>404 — Page Not Found</h1>
-          <p>The requested URL <code>${req.originalUrl}</code> was not found on this server.</p>
-          <a href="/dashboard">Open Web POS Terminal</a>
-        </div>
-      </body>
-    </html>
-  `);
-});
-
-// Start Server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`================================================================`);
-  console.log(`CHOUDHURY POS APP -- REAL WEB APPLICATION & CENTRAL SYNC SERVER`);
-  console.log(`Server actively running on http://0.0.0.0:${PORT}`);
-  console.log(`Database initialized: ${DB_PATH}`);
-  console.log(`================================================================`);
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Choudhury POS server listening on 0.0.0.0:${PORT}`);
 });

@@ -1,26 +1,29 @@
-version: '3.8'
-
 services:
-  choudhury-pos-server:
+  choudhury-pos-web:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: choudhury-pos-server
+    container_name: choudhury-pos-web
     restart: always
     ports:
-      - "8080:8080"
+      - "3000:3000"
     environment:
       - NODE_ENV=production
-      - PORT=8080
-      - DB_PATH=/app/data/pos_central.db
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET must be set in .env or environment}
+      - APP_PORT=3000
+      - DB_PATH=/data/pos_central.db
+      - JWT_SECRET=choudhury-pos-permanent-prod-secret-change-in-production
+      - PUBLIC_BASE_URL=https://pos.yourdomain.com
     volumes:
-      - ./data:/app/data
-      - ./backups:/app/backups
-      - ./public/downloads:/app/public/downloads
+      - pos_data:/data
+      - pos_downloads:/app/public/downloads
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/api/health"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+
+volumes:
+  pos_data:
+    driver: local
+  pos_downloads:
+    driver: local
