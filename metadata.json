@@ -1,6 +1,1 @@
-{
-  "name": "CH UMER POS",
-  "description": "CH UMER POS - Offline-first retail POS & business management for Hardware, Paint, Electrical, and Plumbing with 3D blue ribbon arch branding, multi-branch, inventory, khata, and day closing.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
+
