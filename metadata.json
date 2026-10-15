@@ -1,1 +1,6 @@
-
+{
+  "name": "CH AZLAN POS",
+  "description": "CH AZLAN POS - M AZLAN UMER • POS commercial store management app featuring business onboarding, multi-branch support, inventory, POS sales, invoice generation, purchase entries, customer & supplier ledgers, and reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
